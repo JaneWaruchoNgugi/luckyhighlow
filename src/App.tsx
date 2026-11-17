@@ -8,7 +8,13 @@ import './App.css';
 const START_BALANCE = 1000;
 const STORAGE_KEY = 'luckyhighlow.balance';
 const TOUR_KEY = 'luckyhighlow.tourSeen';
-const CHIPS = [5, 10, 25, 50, 100];
+const RECENT_MAX = 6;
+
+interface Recent {
+  round: number;
+  ball: number;
+  up: boolean;
+}
 
 function loadBalance(): number {
   try {
@@ -57,6 +63,7 @@ export default function App() {
   /** While the reel spins, the screen keeps showing the state from before the draw. */
   const [before, setBefore] = useState<GameState | null>(null);
   const [spinKey, setSpinKey] = useState(0);
+  const [recent, setRecent] = useState<Recent[]>([]);
   const [phase, setPhase] = useState<Phase>('betting');
   const [phaseEnds, setPhaseEnds] = useState(() => Date.now() + BET_SECONDS * 1000);
   const [now, setNow] = useState(() => Date.now());
@@ -104,10 +111,12 @@ export default function App() {
   }, [now, phase, phaseEnds, game, pausedAt]);
 
   const onSpinDone = useCallback(() => {
+    const r = game.last;
+    if (r) setRecent((list) => [{ round: r.round, ball: r.ball, up: r.ball > r.from }, ...list].slice(0, RECENT_MAX));
     setBefore(null);
     setPhase('result');
     setPhaseEnds(Date.now() + RESULT_MS);
-  }, []);
+  }, [game.last]);
 
   const secondsLeft = Math.max(0, Math.ceil((phaseEnds - clock) / 1000));
   const betProgress = betting ? Math.max(0, Math.min(1, (phaseEnds - clock) / (BET_SECONDS * 1000))) : 0;
@@ -116,7 +125,7 @@ export default function App() {
   const lower = oddsFor(view.current, view.remaining, 'lower');
   const available = game.balance + (game.bet?.stake ?? 0);
   const stakeOk = stake > 0 && stake <= available;
-  const broke = betting && !game.bet && game.balance < Math.min(...CHIPS);
+  const broke = betting && !game.bet && game.balance < 1;
   const myBet = game.bet;
 
   const onBet = useCallback(
@@ -148,25 +157,33 @@ export default function App() {
 
   const last = view.last;
   const showResult = phase === 'result' && last !== null;
-  let status: string;
+  let status: React.ReactNode;
   let resultClass: string;
   if (phase === 'drawing') {
     status = 'Bets closed. Drawing…';
     resultClass = 'drawing';
   } else if (showResult && last.bet) {
-    const tag = `${letterFor(last.ball)} ${last.ball}`;
+    const tag = `${letterFor(last.ball)}-${last.ball}`;
     status = last.won
       ? `${tag}! You won ${fmt(last.payout)}.`
       : `${tag} was ${last.bet.dir === 'higher' ? 'lower' : 'higher'}. You lost ${fmt(last.bet.stake)}.`;
     resultClass = last.won ? 'win' : 'lose';
   } else if (showResult) {
-    status = `${letterFor(last.ball)} ${last.ball} drawn. No bet this round.`;
+    status = `${letterFor(last.ball)}-${last.ball} drawn. No bet this round.`;
     resultClass = 'idle';
   } else if (myBet) {
-    status = `Bet placed: ${fmt(myBet.stake)} on ${myBet.dir === 'higher' ? 'Higher' : 'Lower'}. Draw in ${secondsLeft}s.`;
+    status = (
+      <>
+        Bet on {myBet.dir === 'higher' ? 'Higher' : 'Lower'}. Draw in <b>{secondsLeft}s.</b>
+      </>
+    );
     resultClass = 'placed';
   } else {
-    status = `Place your bets. Draw in ${secondsLeft}s.`;
+    status = (
+      <>
+        Place your bets. Draw in <b>{secondsLeft}s.</b>
+      </>
+    );
     resultClass = 'idle';
   }
   const lightShow: LightShow =
@@ -183,12 +200,15 @@ export default function App() {
 
   const setBet = (n: number) => setStake(Math.max(1, Math.min(Math.floor(available), Math.floor(n))));
 
+  const payFor = (dir: Direction, o: typeof higher) =>
+    myBet?.dir === dir ? myBet.stake * myBet.step : o.multiplier !== null && stakeOk ? stake * o.multiplier : null;
+
   const guessButton = (dir: Direction, o: typeof higher) => {
     const mine = myBet?.dir === dir;
-    const pays = mine ? myBet.stake * myBet.step : o.multiplier !== null && stakeOk ? stake * o.multiplier : null;
+    const pays = payFor(dir, o);
     return (
       <button
-        className={`btn guess ${dir} ${mine ? 'picked' : ''}`}
+        className={`guess ${dir} ${mine ? 'picked' : ''}`}
         onClick={() => onBet(dir)}
         disabled={!betting || !stakeOk || o.multiplier === null}
         aria-pressed={mine}
@@ -196,7 +216,7 @@ export default function App() {
       >
         {mine && <span className="g-ribbon">Your bet · {fmt(myBet.stake)}</span>}
         <span className="g-icon" aria-hidden="true">
-          {dir === 'higher' ? '▲' : '▼'}
+          <Arrow up={dir === 'higher'} />
         </span>
         <span className="g-text">
           <span className="g-title">{dir === 'higher' ? 'Higher' : 'Lower'}</span>
@@ -207,85 +227,112 @@ export default function App() {
           </span>
         </span>
         <span className="g-pay">
-          <span className="g-pay-label">{mine ? 'Pays' : 'Win'}</span>
+          <span className="g-pay-label">Win</span>
           <span className="g-pay-amount">{pays === null ? '–' : fmt(pays)}</span>
         </span>
       </button>
     );
   };
 
-  const oddsCard = (dir: Direction, o: typeof higher) => (
-    <div className={`odds-card ${dir}`}>
-      <span className="odds-dir">{dir === 'higher' ? '▲ Higher' : '▼ Lower'}</span>
-      <span className="odds-mult">{o.multiplier === null ? '—' : `×${o.multiplier.toFixed(2)}`}</span>
-      <span className="odds-chance">
-        {pct(o.chance)} · {o.winning} {o.winning === 1 ? 'ball' : 'balls'}
-      </span>
-    </div>
-  );
+  const oddsCard = (dir: Direction, o: typeof higher) => {
+    const pays = payFor(dir, o);
+    const mine = myBet?.dir === dir;
+    return (
+      <button
+        className={`odds-card ${dir} ${mine ? 'picked' : ''}`}
+        onClick={() => onBet(dir)}
+        disabled={!betting || !stakeOk || o.multiplier === null}
+        aria-pressed={mine}
+        aria-label={`Bet ${dir}${o.multiplier ? ` at ×${o.multiplier.toFixed(2)}` : ''}`}
+      >
+        <span className="odds-dir">
+          <Arrow up={dir === 'higher'} />
+          {dir === 'higher' ? 'Higher' : 'Lower'}
+        </span>
+        <span className="odds-mult">{o.multiplier === null ? '—' : `×${o.multiplier.toFixed(2)}`}</span>
+        <span className="odds-chance">
+          ≈ {pct(o.chance)} · {pays === null ? '–' : fmt(pays)}
+        </span>
+      </button>
+    );
+  };
 
   return (
     <div className="app">
-      <header className="topbar">
-        <h1 className="logo">
-          <span className="logo-lucky">Lucky</span>
-          <span className="logo-hl">highlow</span>
-        </h1>
-        <div className="topbar-right">
-          <button className="help" onClick={openTour}>
-            <span aria-hidden="true">?</span> How to play
+      <div className="bg-balls" aria-hidden="true">
+        {[68, 75, 12, 47, 33, 59, 8, 21].map((n, i) => (
+          <span key={i} className={`bg-ball b${i}`}>
+            {n}
+          </span>
+        ))}
+      </div>
+
+      <header className="hdr">
+        <button className="menu" onClick={openTour} aria-label="How to play">
+          <span />
+          <span />
+          <span />
+        </button>
+        <div className="brand">
+          <h1 className="logo">
+            <Crown />
+            <span className="l-lucky">Lucky</span>
+            <span className="l-hl">highlow</span>
+          </h1>
+          <p className="tagline">Guess Higher or Lower and Multiply Your Win!</p>
+        </div>
+        <div className="hdr-right">
+          <button className="pill help" onClick={openTour}>
+            <span className="help-q" aria-hidden="true">
+              ?
+            </span>
+            How to play
           </button>
-          <div className={`balance ${flash ?? ''}`} aria-live="polite" data-tour="balance">
-            <span className="balance-coin" aria-hidden="true" />
+          <div className={`pill balance ${flash ?? ''}`} aria-live="polite" data-tour="balance">
+            <span className="coin" aria-hidden="true" />
             <span className="amount">{fmt(view.balance)}</span>
             {showResult && last.won && <span className="balance-delta">+{fmt(last.payout)}</span>}
           </div>
         </div>
       </header>
 
-      <main className="table">
-        <section className="game" aria-label="Game">
-          <p className={`toast ${resultClass}`} role="status">
-            {status}
+      <main className="layout">
+        <section className="stage" aria-label="Game">
+          <p className={`status ${resultClass}`} role="status">
+            <span className="live-icon" aria-hidden="true">
+              <i />
+            </span>
+            <span>{status}</span>
           </p>
-
           <div className="arena" data-tour="arena">
             {oddsCard('lower', lower)}
             <div className="canvas-wrap" data-tour="ball">
-              <GameCanvas
-                target={game.current}
-                spinKey={spinKey}
-                show={lightShow}
-                hud={{
-                  round: view.round,
-                  secondsLeft: betting ? secondsLeft : null,
-                  progress: betProgress,
-                  label: phase === 'drawing' ? 'DRAW' : 'NEXT',
-                }}
-                onDone={onSpinDone}
-              />
+              <GameCanvas target={game.current} spinKey={spinKey} show={lightShow} onDone={onSpinDone} />
+              <span className="round-tag">
+                Round {view.round}
+                {betting && <i style={{ transform: `scaleX(${betProgress})` }} />}
+              </span>
             </div>
             {oddsCard('higher', higher)}
           </div>
-
-          <div className="range-wrap" data-tour="range">
-            <RangeBar current={view.current} remaining={view.remaining} />
-          </div>
-          <p className="drum-count">{view.remaining.length} of 75 balls left in the drum</p>
         </section>
 
-        <aside className="controls" aria-label="Bet">
+        <section className="bet-panel" aria-label="Your bet">
           <div className="panel-head">
-            <span className="panel-title">Your bet</span>
+            <span className="panel-title">
+              <Coins />
+              Your Bet
+            </span>
             <span className={`panel-state ${betting ? 'open' : 'closed'}`}>
+              <i aria-hidden="true" />
               {betting ? 'Bets open' : 'Bets closed'}
             </span>
           </div>
 
-          <div className="bet-group" data-tour="bet">
+          <div className="bet-controls" data-tour="bet">
             <div className="stepper">
               <button
-                className="step-btn"
+                className="round-btn"
                 onClick={() => setBet(stake - 5)}
                 disabled={!betting || stake <= 1}
                 aria-label="Lower bet by 5"
@@ -293,7 +340,7 @@ export default function App() {
                 −
               </button>
               <label className="stake-box" htmlFor="stake">
-                <span className="stake-coin" aria-hidden="true" />
+                <span className="coin" aria-hidden="true" />
                 <span className="sr-only">Bet amount</span>
                 <input
                   id="stake"
@@ -307,7 +354,7 @@ export default function App() {
                 />
               </label>
               <button
-                className="step-btn"
+                className="round-btn"
                 onClick={() => setBet(stake + 5)}
                 disabled={!betting || stake >= available}
                 aria-label="Raise bet by 5"
@@ -320,30 +367,16 @@ export default function App() {
                 ½
               </button>
               <button onClick={() => setBet(stake * 2)} disabled={!betting}>
-                2×
+                2x
               </button>
               <button onClick={() => setBet(available)} disabled={!betting}>
                 Max
               </button>
             </div>
-
-            <div className="chips" role="group" aria-label="Quick bets">
-              {CHIPS.map((c) => (
-                <button
-                  key={c}
-                  className={`chip chip-${c} ${stake === c ? 'on' : ''}`}
-                  onClick={() => setStake(c)}
-                  disabled={!betting || c > available}
-                  aria-pressed={stake === c}
-                >
-                  <span>{c}</span>
-                </button>
-              ))}
-            </div>
           </div>
 
           {broke ? (
-            <button className="btn refill" onClick={() => setGame((g) => ({ ...g, balance: START_BALANCE }))}>
+            <button className="refill" onClick={() => setGame((g) => ({ ...g, balance: START_BALANCE }))}>
               Refill to {fmt(START_BALANCE)}
             </button>
           ) : (
@@ -352,23 +385,134 @@ export default function App() {
               {guessButton('lower', lower)}
             </div>
           )}
+
+          <div className="bet-info">
+            <div>
+              <span className="info-icon" aria-hidden="true">
+                <Trophy />
+              </span>
+              <span>
+                <span className="info-label">Current Multiplier</span>
+                <span className="info-value">{myBet ? `×${myBet.step.toFixed(2)}` : '— —'}</span>
+              </span>
+            </div>
+            <div>
+              <span className="info-icon" aria-hidden="true">
+                <Coins />
+              </span>
+              <span>
+                <span className="info-label">Potential Win</span>
+                <span className="info-value">{myBet ? fmt(myBet.stake * myBet.step) : '— —'}</span>
+              </span>
+            </div>
+          </div>
+
           {myBet && betting && (
-            <button className="mini cancel" onClick={onCancel}>
+            <button className="cancel" onClick={onCancel}>
               Cancel bet
             </button>
           )}
-          {!betting && <p className="bets-closed">Bets are closed until the next round.</p>}
           {!stakeOk && !broke && <p className="bet-error">Bet must be between 1 and your balance.</p>}
-          <p className="keys">
-            <kbd>H</kbd> higher · <kbd>L</kbd> lower · <kbd>Esc</kbd> cancel
-          </p>
-        </aside>
+        </section>
+
+        <section className="panel progress" data-tour="range">
+          <RangeBar current={view.current} remaining={view.remaining} />
+        </section>
+
+        <section className="panel recent" aria-label="Recent results">
+          <span className="recent-title">
+            <Clock />
+            Recent Results:
+          </span>
+          <span className="recent-balls">
+            {recent.length === 0 && <span className="muted">The first draw lands in a few seconds.</span>}
+            {recent.map((r) => (
+              <span
+                key={r.round}
+                className={`mini-ball ${r.up ? 'up' : 'down'}`}
+                title={`Round ${r.round}: ${r.ball}, ${r.up ? 'higher' : 'lower'}`}
+              >
+                {r.ball}
+              </span>
+            ))}
+          </span>
+        </section>
       </main>
+
       <p className="footnote">
-        A new ball is drawn every {BET_SECONDS} seconds. Your multiplier is locked when you bet. Play money only;
-        multipliers pay 97% of fair odds.
+        A new ball is drawn every {BET_SECONDS} seconds. Play money only; multipliers pay 97% of fair odds. <kbd>H</kbd>{' '}
+        higher · <kbd>L</kbd> lower · <kbd>Esc</kbd> cancel
       </p>
+
+      <button className="help-fab" onClick={openTour}>
+        <span aria-hidden="true">?</span>
+        How to play
+      </button>
+
       {touring && <Tour onClose={closeTour} />}
     </div>
+  );
+}
+
+function Arrow({ up }: { up: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="arrow">
+      {up ? <path d="M12 3 4 13h5v8h6v-8h5z" /> : <path d="M12 21 4 11h5V3h6v8h5z" />}
+    </svg>
+  );
+}
+
+function Crown() {
+  return (
+    <svg className="crown" viewBox="0 0 64 44" aria-hidden="true">
+      <defs>
+        <linearGradient id="crownGold" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#fff3a8" />
+          <stop offset=".5" stopColor="#ffc928" />
+          <stop offset="1" stopColor="#c47a00" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M4 14 18 26 32 4l14 22 14-12-6 26H10z"
+        fill="url(#crownGold)"
+        stroke="#7a4500"
+        strokeWidth="2.5"
+        strokeLinejoin="round"
+      />
+      <circle cx="4" cy="13" r="4" fill="#ffe16b" stroke="#7a4500" strokeWidth="2" />
+      <circle cx="32" cy="5" r="4" fill="#ffe16b" stroke="#7a4500" strokeWidth="2" />
+      <circle cx="60" cy="13" r="4" fill="#ffe16b" stroke="#7a4500" strokeWidth="2" />
+      <rect x="10" y="36" width="44" height="6" rx="2" fill="#e9a400" stroke="#7a4500" strokeWidth="2" />
+    </svg>
+  );
+}
+
+function Coins() {
+  return (
+    <svg className="icon coins" viewBox="0 0 24 24" aria-hidden="true">
+      <ellipse cx="9" cy="17" rx="7" ry="3" fill="#e9a400" />
+      <ellipse cx="9" cy="15" rx="7" ry="3" fill="#ffd34d" stroke="#b77800" />
+      <ellipse cx="15" cy="10" rx="7" ry="3" fill="#e9a400" />
+      <ellipse cx="15" cy="8" rx="7" ry="3" fill="#ffe27a" stroke="#b77800" />
+    </svg>
+  );
+}
+
+function Trophy() {
+  return (
+    <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M7 3h10v5a5 5 0 0 1-10 0z" fill="#ffd34d" stroke="#b77800" />
+      <path d="M7 5H3v2a4 4 0 0 0 4 4M17 5h4v2a4 4 0 0 1-4 4" fill="none" stroke="#ffd34d" strokeWidth="2" />
+      <path d="M10 13h4v4h-4zM7 18h10v3H7z" fill="#e9a400" />
+    </svg>
+  );
+}
+
+function Clock() {
+  return (
+    <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 12a8 8 0 1 0 2.3-5.6" fill="none" stroke="#ffd34d" strokeWidth="2.4" strokeLinecap="round" />
+      <path d="M4 4v4h4M12 7v5l3 2" fill="none" stroke="#ffd34d" strokeWidth="2.4" strokeLinecap="round" />
+    </svg>
   );
 }

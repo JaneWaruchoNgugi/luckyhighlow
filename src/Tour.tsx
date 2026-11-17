@@ -20,27 +20,27 @@ const TOUR_STEPS: TourStep[] = [
   {
     target: 'arena',
     title: 'Read the odds',
-    body: 'The cards beside the ball show each side’s multiplier and chance. The fewer balls that can win, the bigger the multiplier.',
+    body: 'The cards beside the ball show each side’s multiplier, chance and what your bet would win. The fewer balls that can win, the bigger the multiplier. Tap a card to bet on that side.',
   },
   {
     target: 'range',
-    title: 'Where the ball sits',
-    body: 'This bar runs from 1 to 75. 38 is the middle. The ticks are balls still in the drum, so you can see how many are lower and higher.',
+    title: 'Round Progress',
+    body: 'This bar runs from 1 to 75, with 38 in the middle. Red ticks are balls left below the current ball, green ticks are balls left above it.',
   },
   {
     target: 'bet',
     title: 'Choose your bet',
-    body: 'Tap a chip or type an amount. ½ halves your bet and 2× doubles it.',
+    body: 'Use − and + or type an amount. ½ halves your bet, 2x doubles it and Max bets your whole balance.',
   },
   {
     target: 'guess',
     title: 'Pick Higher or Lower',
-    body: 'Tap a button to place your bet. The stake leaves your balance and your multiplier is locked. You can switch sides or cancel until the timer runs out.',
+    body: 'Tap Higher or Lower to place your bet. The stake leaves your balance and your multiplier is locked. You can switch sides or cancel until the timer runs out.',
   },
   {
     target: 'ball',
     title: 'Live rounds',
-    body: 'The badge shows the round number and the ring counts down. Every round lasts 15 seconds. When the timer hits zero, bets close and the next ball rolls in on the reel. Balls are not put back until the drum is empty.',
+    body: 'Every round lasts 15 seconds and the message above the ball counts down. When the timer hits zero, bets close and the next ball rolls in on the reel. Balls are not put back until the drum is empty.',
   },
   {
     target: 'balance',
@@ -73,6 +73,7 @@ export function Tour({ onClose }: { onClose: () => void }) {
     const el = step.target ? document.querySelector<HTMLElement>(`[data-tour="${step.target}"]`) : null;
     if (!el) return setBox(null);
     const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return setBox(null);
     setBox({ top: r.top - PAD, left: r.left - PAD, width: r.width + PAD * 2, height: r.height + PAD * 2 });
   }, [step.target]);
 
