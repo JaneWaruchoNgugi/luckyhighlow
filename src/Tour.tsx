@@ -40,7 +40,7 @@ const TOUR_STEPS: TourStep[] = [
   {
     target: 'ball',
     title: 'Live rounds',
-    body: 'Each round gives you 8 seconds to bet (change it in Settings), and the ring around the ball counts down. When the timer hits zero, bets close and the next ball rolls in on the reel. Balls are not put back until the drum is empty.',
+    body: 'Each round gives you 8 seconds to bet, and the ring around the ball counts down. When the timer hits zero, bets close and the next ball rolls in on the reel. Balls are not put back until the drum is empty.',
   },
   {
     target: 'balance',

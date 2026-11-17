@@ -4,7 +4,7 @@ import { RangeBar } from './RangeBar';
 import { Tour } from './Tour';
 import { GameCanvas, type LightShow } from './GameCanvas';
 import { SettingsPanel } from './SettingsPanel';
-import { loadSettings, saveSettings, type Settings } from './settings';
+import { loadSettings, saveSettings, systemReducedMotion, type Settings } from './settings';
 import { setSound, sfx, unlockAudio } from './sound';
 import './App.css';
 
@@ -56,6 +56,9 @@ const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 
 const pct = (n: number) => `${Math.round(n * 100)}%`;
 
 const RESULT_MS = 3500;
+const BET_SECONDS = 8;
+const BET_STEP = 5;
+const REDUCE_MOTION = systemReducedMotion();
 const QUICK_BETS = [10, 50, 100, 500];
 
 type Phase = 'betting' | 'drawing' | 'result';
@@ -69,9 +72,7 @@ export default function App() {
   const [spinKey, setSpinKey] = useState(0);
   const [recent, setRecent] = useState<Recent[]>([]);
   const [phase, setPhase] = useState<Phase>('betting');
-  const [phaseEnds, setPhaseEnds] = useState(() => Date.now() + settings.roundSeconds * 1000);
-  /** Length of the current betting window; a new round length applies from the next round. */
-  const [windowMs, setWindowMs] = useState(() => settings.roundSeconds * 1000);
+  const [phaseEnds, setPhaseEnds] = useState(() => Date.now() + BET_SECONDS * 1000);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [touring, setTouring] = useState(() => !tourSeen());
@@ -139,16 +140,15 @@ export default function App() {
       setPhase('drawing');
       setPhaseEnds(Number.POSITIVE_INFINITY);
       sfx.close();
-      if (!settings.reduceMotion) sfx.spin(1500);
+      if (!REDUCE_MOTION) sfx.spin(1500);
       setBefore(game);
       setGame(drawRound(game));
       setSpinKey((k) => k + 1);
     } else if (phase === 'result') {
       setPhase('betting');
-      setPhaseEnds(Date.now() + settings.roundSeconds * 1000);
-      setWindowMs(settings.roundSeconds * 1000);
+      setPhaseEnds(Date.now() + BET_SECONDS * 1000);
     }
-  }, [now, phase, phaseEnds, game, pausedAt, settings.roundSeconds, settings.reduceMotion]);
+  }, [now, phase, phaseEnds, game, pausedAt]);
 
   const onSpinDone = useCallback(() => {
     const r = game.last;
@@ -254,7 +254,6 @@ export default function App() {
     sfx.click();
     setStake(Math.max(1, Math.min(Math.floor(available), Math.floor(n))));
   };
-  const step = settings.betStep;
 
   const payFor = (dir: Direction, o: typeof higher) =>
     myBet?.dir === dir ? myBet.stake * myBet.step : o.multiplier !== null && stakeOk ? stake * o.multiplier : null;
@@ -375,12 +374,12 @@ export default function App() {
                   betting
                     ? {
                         endsAt: phaseEnds,
-                        totalMs: windowMs,
+                        totalMs: BET_SECONDS * 1000,
                         frozenMs: pausedAt !== null ? phaseEnds - pausedAt : null,
                       }
                     : null
                 }
-                reduceMotion={settings.reduceMotion}
+                reduceMotion={REDUCE_MOTION}
                 onDone={onSpinDone}
               />
               <span className="round-tag">Round {view.round}</span>
@@ -405,9 +404,9 @@ export default function App() {
             <div className="stepper">
               <button
                 className="round-btn"
-                onClick={() => setBet(stake - step)}
+                onClick={() => setBet(stake - BET_STEP)}
                 disabled={!betting || stake <= 1}
-                aria-label={`Lower bet by ${step}`}
+                aria-label={`Lower bet by ${BET_STEP}`}
               >
                 −
               </button>
@@ -427,9 +426,9 @@ export default function App() {
               </label>
               <button
                 className="round-btn"
-                onClick={() => setBet(stake + step)}
+                onClick={() => setBet(stake + BET_STEP)}
                 disabled={!betting || stake >= available}
-                aria-label={`Raise bet by ${step}`}
+                aria-label={`Raise bet by ${BET_STEP}`}
               >
                 +
               </button>
@@ -493,7 +492,7 @@ export default function App() {
       </main>
 
       <p className="footnote">
-        Bets close {settings.roundSeconds} seconds into each round. Play money only; multipliers pay 97% of fair odds.{' '}
+        Bets close {BET_SECONDS} seconds into each round. Play money only; multipliers pay 97% of fair odds.{' '}
         <kbd>H</kbd> higher · <kbd>L</kbd> lower · <kbd>Esc</kbd> cancel
       </p>
 

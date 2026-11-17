@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ROUND_CHOICES, STEP_CHOICES, type Settings } from './settings';
+import { type Settings } from './settings';
 import { sfx } from './sound';
 
 export function SettingsPanel({
@@ -73,59 +73,6 @@ export function SettingsPanel({
               disabled={!settings.sound}
               onChange={(e) => set('volume', Number(e.target.value) / 100)}
               onPointerUp={() => sfx.bet()}
-            />
-          </label>
-        </section>
-
-        <section className="set-group">
-          <h3>Gameplay</h3>
-          <div className="set-row">
-            <span>
-              <span className="set-label">Round length</span>
-              <span className="set-hint">Time to bet before each draw. Starts next round.</span>
-            </span>
-            <span className="seg" role="group" aria-label="Round length">
-              {ROUND_CHOICES.map((n) => (
-                <button
-                  key={n}
-                  className={settings.roundSeconds === n ? 'on' : ''}
-                  aria-pressed={settings.roundSeconds === n}
-                  onClick={() => set('roundSeconds', n)}
-                >
-                  {n}s
-                </button>
-              ))}
-            </span>
-          </div>
-          <div className="set-row">
-            <span>
-              <span className="set-label">Bet step</span>
-              <span className="set-hint">How much − and + change your bet</span>
-            </span>
-            <span className="seg" role="group" aria-label="Bet step">
-              {STEP_CHOICES.map((n) => (
-                <button
-                  key={n}
-                  className={settings.betStep === n ? 'on' : ''}
-                  aria-pressed={settings.betStep === n}
-                  onClick={() => set('betStep', n)}
-                >
-                  {n}
-                </button>
-              ))}
-            </span>
-          </div>
-          <label className="set-row" htmlFor="set-motion">
-            <span>
-              <span className="set-label">Reduce motion</span>
-              <span className="set-hint">Skips the reel spin and light effects</span>
-            </span>
-            <input
-              id="set-motion"
-              type="checkbox"
-              className="switch"
-              checked={settings.reduceMotion}
-              onChange={(e) => set('reduceMotion', e.target.checked)}
             />
           </label>
         </section>
