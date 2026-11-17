@@ -3,12 +3,13 @@
 Higher or Lower with Bingo 75 balls, built in React + TypeScript (Vite). Play money only.
 
 ## How to play
-- Pick a stake and draw the first ball (1–75, with its B-I-N-G-O letter).
-- Guess whether the next ball is **higher** or **lower**. Balls are drawn without replacement.
-- Each correct guess multiplies your win by that guess's odds: `0.97 × balls left ÷ winning balls`
-  (floored to 2 decimals, minimum ×1.01). Long shots pay more.
-- A wrong guess loses the stake. Cash out any time after your first correct guess.
-- Keys: H / ↑ higher, L / ↓ lower, C cash out, Enter to draw.
+- A ball from 1–75 is showing, with its B-I-N-G-O letter. The middle ball is 38.
+- Pick a bet with the chips (or type one), then tap **Higher** or **Lower**.
+- The next ball rolls in on the reel. Balls are drawn without replacement; the drum refills when it runs out.
+- A win pays `bet × multiplier` straight into your balance; a loss takes the bet.
+  Multiplier = `0.97 × balls left ÷ winning balls` (floored to 2 decimals, minimum ×1.01), so long shots pay more.
+- The bar under the reel shows where the ball sits on 1–75 and how many balls are left lower and higher.
+- Keys: H / ↑ higher, L / ↓ lower.
 
 ## Run it
 ```bash

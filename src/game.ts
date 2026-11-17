@@ -6,7 +6,6 @@ export const RETURN_TO_PLAYER = 0.97;
 
 export type Letter = 'B' | 'I' | 'N' | 'G' | 'O';
 export type Direction = 'higher' | 'lower';
-export type Phase = 'idle' | 'playing' | 'lost' | 'cashed';
 
 export const LETTERS: Letter[] = ['B', 'I', 'N', 'G', 'O'];
 
@@ -41,23 +40,6 @@ export function oddsFor(current: number, remaining: readonly number[], dir: Dire
   return { winning, total, chance, multiplier };
 }
 
-export interface GameState {
-  phase: Phase;
-  balance: number;
-  stake: number;
-  /** Total multiplier built up this round. */
-  multiplier: number;
-  current: number | null;
-  /** Balls still in the drum (excludes current). */
-  remaining: number[];
-  /** Balls drawn this round, in order, including current. */
-  drawn: number[];
-  /** Result of the last guess, for feedback. */
-  last: { dir: Direction; ball: number; won: boolean; step: number } | null;
-  /** Amount paid out when the round ended by cashing out. */
-  payout: number;
-}
-
 export type Rng = () => number;
 
 export const defaultRng: Rng = () => {
@@ -66,18 +48,25 @@ export const defaultRng: Rng = () => {
   return buf[0] / 2 ** 32;
 };
 
-export function newGame(balance: number): GameState {
-  return {
-    phase: 'idle',
-    balance,
-    stake: 0,
-    multiplier: 1,
-    current: null,
-    remaining: [],
-    drawn: [],
-    last: null,
-    payout: 0,
-  };
+export interface BetResult {
+  dir: Direction;
+  stake: number;
+  ball: number;
+  won: boolean;
+  /** Multiplier the bet was placed at. */
+  step: number;
+  /** Amount credited to the balance (0 on a loss). */
+  payout: number;
+}
+
+export interface GameState {
+  balance: number;
+  /** Ball showing now. */
+  current: number;
+  /** Balls still in the drum (excludes current). */
+  remaining: number[];
+  /** Result of the last bet, for feedback. */
+  last: BetResult | null;
 }
 
 function takeRandom(pool: readonly number[], rng: Rng): [number, number[]] {
@@ -87,53 +76,34 @@ function takeRandom(pool: readonly number[], rng: Rng): [number, number[]] {
   return [ball, rest];
 }
 
-export function startRound(state: GameState, stake: number, rng: Rng = defaultRng): GameState {
-  if (state.phase === 'playing') throw new Error('Round already in progress');
+const fullDrum = () => Array.from({ length: TOTAL_BALLS }, (_, i) => i + 1);
+
+/** Fresh drum with the first ball already showing. */
+export function newGame(balance: number, rng: Rng = defaultRng): GameState {
+  const [current, remaining] = takeRandom(fullDrum(), rng);
+  return { balance, current, remaining, last: null };
+}
+
+/**
+ * One bet: the stake comes off the balance, the next ball is drawn, and a win
+ * pays stake x multiplier straight back into the balance. When the drum runs
+ * out it is refilled with every ball except the one showing.
+ */
+export function placeBet(state: GameState, dir: Direction, stake: number, rng: Rng = defaultRng): GameState {
   if (!Number.isFinite(stake) || stake <= 0) throw new Error('Stake must be positive');
   if (stake > state.balance) throw new Error('Stake is more than your balance');
-  const drum = Array.from({ length: TOTAL_BALLS }, (_, i) => i + 1);
-  const [first, remaining] = takeRandom(drum, rng);
-  return {
-    phase: 'playing',
-    balance: round2(state.balance - stake),
-    stake,
-    multiplier: 1,
-    current: first,
-    remaining,
-    drawn: [first],
-    last: null,
-    payout: 0,
-  };
-}
-
-export function guess(state: GameState, dir: Direction, rng: Rng = defaultRng): GameState {
-  if (state.phase !== 'playing' || state.current === null) throw new Error('No round in progress');
   const odds = oddsFor(state.current, state.remaining, dir);
   if (odds.multiplier === null) throw new Error(`No ${dir} balls left`);
-  const [ball, remaining] = takeRandom(state.remaining, rng);
+  const [ball, rest] = takeRandom(state.remaining, rng);
   const won = dir === 'higher' ? ball > state.current : ball < state.current;
-  const next: GameState = {
-    ...state,
+  const payout = won ? round2(stake * odds.multiplier) : 0;
+  const remaining = rest.length > 0 ? rest : fullDrum().filter((b) => b !== ball);
+  return {
+    balance: round2(state.balance - stake + payout),
     current: ball,
     remaining,
-    drawn: [...state.drawn, ball],
-    last: { dir, ball, won, step: odds.multiplier },
+    last: { dir, stake, ball, won, step: odds.multiplier, payout },
   };
-  if (!won) return { ...next, phase: 'lost', multiplier: 0, payout: 0 };
-  const multiplier = round2(state.multiplier * odds.multiplier);
-  const withWin = { ...next, multiplier };
-  // Drum empty: nothing left to guess, so bank the win.
-  return remaining.length === 0 ? cashOut(withWin) : withWin;
-}
-
-export function potentialWin(state: GameState): number {
-  return round2(state.stake * state.multiplier);
-}
-
-export function cashOut(state: GameState): GameState {
-  if (state.phase !== 'playing') throw new Error('No round in progress');
-  const payout = potentialWin(state);
-  return { ...state, phase: 'cashed', payout, balance: round2(state.balance + payout) };
 }
 
 function round2(n: number): number {

@@ -1,17 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  LETTERS,
-  TOTAL_BALLS,
-  cashOut,
-  guess,
-  letterFor,
-  newGame,
-  oddsFor,
-  potentialWin,
-  startRound,
-  type Direction,
-  type GameState,
-} from './game';
+import { useCallback, useEffect, useState } from 'react';
+import { letterFor, newGame, oddsFor, placeBet, type Direction, type GameState } from './game';
 import { Reel } from './Reel';
 import { RangeBar } from './RangeBar';
 import './App.css';
@@ -40,25 +28,6 @@ function saveBalance(n: number) {
 const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const pct = (n: number) => `${Math.round(n * 100)}%`;
 
-function Ball({ n, size = 'lg', animKey }: { n: number | null; size?: 'lg' | 'sm'; animKey?: number }) {
-  if (n === null) {
-    return (
-      <div className={`ball ball-${size} ball-empty`} aria-label="No ball drawn yet">
-        <span className="ball-face">?</span>
-      </div>
-    );
-  }
-  const l = letterFor(n);
-  return (
-    <div key={animKey} className={`ball ball-${size} col-${l}`} aria-label={`${l} ${n}`}>
-      <span className="ball-face">
-        <span className="ball-letter">{l}</span>
-        <span className="ball-num">{n}</span>
-      </span>
-    </div>
-  );
-}
-
 export default function App() {
   const [game, setGame] = useState<GameState>(() => newGame(loadBalance()));
   const [stake, setStake] = useState(10);
@@ -71,38 +40,22 @@ export default function App() {
 
   useEffect(() => saveBalance(game.balance), [game.balance]);
 
-  const playing = game.phase === 'playing';
-  const higher = playing && game.current !== null ? oddsFor(game.current, game.remaining, 'higher') : null;
-  const lower = playing && game.current !== null ? oddsFor(game.current, game.remaining, 'lower') : null;
-  const drawnSet = useMemo(() => new Set(view.drawn), [view.drawn]);
-  const broke = !playing && !spinning && game.balance < 1;
+  const higher = oddsFor(view.current, view.remaining, 'higher');
+  const lower = oddsFor(view.current, view.remaining, 'lower');
   const stakeOk = stake > 0 && stake <= game.balance;
+  const broke = !spinning && game.balance < Math.min(...CHIPS);
 
-  const deal = useCallback(() => {
-    if (!stakeOk || playing || spinning) return;
-    setFlash(null);
-    const next = startRound(game, stake);
-    setBefore({ ...next, current: game.current, drawn: [], phase: 'playing' });
-    setGame(next);
-    setSpinKey((k) => k + 1);
-  }, [stake, stakeOk, playing, spinning, game]);
-
-  const onGuess = useCallback(
+  const onBet = useCallback(
     (dir: Direction) => {
-      const o = dir === 'higher' ? higher : lower;
-      if (spinning || !o || o.multiplier === null) return;
-      const next = guess(game, dir);
+      if (spinning || !stakeOk) return;
+      if (oddsFor(game.current, game.remaining, dir).multiplier === null) return;
       setFlash(null);
-      setBefore(game);
-      setGame(next);
+      setBefore({ ...game, balance: game.balance - stake });
+      setGame(placeBet(game, dir, stake));
       setSpinKey((k) => k + 1);
     },
-    [game, higher, lower, spinning],
+    [game, spinning, stake, stakeOk],
   );
-
-  const onCashOut = useCallback(() => {
-    if (playing && !spinning) setGame((g) => cashOut(g));
-  }, [playing, spinning]);
 
   const onSpinDone = useCallback(() => {
     setBefore(null);
@@ -113,28 +66,25 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement) return;
       const k = e.key.toLowerCase();
-      if (playing && (k === 'h' || e.key === 'ArrowUp')) onGuess('higher');
-      else if (playing && (k === 'l' || e.key === 'ArrowDown')) onGuess('lower');
-      else if (playing && k === 'c') onCashOut();
-      else if (!playing && (k === 'enter' || k === ' ')) deal();
+      if (k === 'h' || e.key === 'ArrowUp') onBet('higher');
+      else if (k === 'l' || e.key === 'ArrowDown') onBet('lower');
       else return;
       e.preventDefault();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [playing, onGuess, onCashOut, deal]);
+  }, [onBet]);
 
-  const streak = view.drawn.length - 1 - (view.phase === 'lost' ? 1 : 0);
-
-  const viewPlaying = view.phase === 'playing';
+  const last = view.last;
   let status: string;
   if (spinning) status = 'Drawing…';
-  else if (view.phase === 'idle') status = 'Pick a stake and draw the first ball.';
-  else if (view.phase === 'lost')
-    status = `${letterFor(view.last!.ball)} ${view.last!.ball} was ${view.last!.dir === 'higher' ? 'lower' : 'higher'}. Stake lost.`;
-  else if (view.phase === 'cashed') status = `Cashed out ${fmt(view.payout)} at ×${view.multiplier.toFixed(2)}.`;
-  else if (view.last) status = `Correct! ×${view.last.step.toFixed(2)} added. Keep going or cash out.`;
-  else status = 'Will the next ball be higher or lower?';
+  else if (!last) status = 'Pick your bet, then guess: will the next ball be higher or lower?';
+  else if (last.won) status = `${letterFor(last.ball)} ${last.ball}! Paid ${fmt(last.payout)} on your ${fmt(last.stake)} bet.`;
+  else status = `${letterFor(last.ball)} ${last.ball} was ${last.dir === 'higher' ? 'lower' : 'higher'}. You lost ${fmt(last.stake)}.`;
+
+  const oddsText = (o: typeof higher) =>
+    spinning ? '…' : o.multiplier ? `×${o.multiplier.toFixed(2)} · ${pct(o.chance)}` : 'none left';
+  const winText = (o: typeof higher) => (o.multiplier && stakeOk ? `Pays ${fmt(stake * o.multiplier)}` : ' ');
 
   return (
     <div className="app">
@@ -145,156 +95,89 @@ export default function App() {
             high<span className="logo-arrow up">▲</span>low<span className="logo-arrow down">▼</span>
           </span>
         </h1>
-        <div className="balance" aria-live="polite">
+        <div className={`balance ${flash ?? ''}`} aria-live="polite">
           <span className="balance-coin" aria-hidden="true">L</span>
           <span>
-            <span className="label">Play money</span>
+            <span className="label">Balance</span>
             <span className="amount">{fmt(view.balance)}</span>
           </span>
+          {!spinning && last?.won && <span className="balance-delta">+{fmt(last.payout)}</span>}
         </div>
       </header>
 
-      <main className="table">
-        <section className={`stage ${flash ?? ''}`}>
-          <div className="stage-meta">
-            <div>
-              <span className="label">Stake</span>
-              <span className="value">{view.phase !== 'idle' ? fmt(view.stake) : '—'}</span>
+      <main className={`stage ${flash ?? ''}`}>
+        <div className="ball-wrap">
+          <div className={`marquee ${spinning ? 'on' : ''}`}>
+            <Reel target={game.current} spinKey={spinKey} onDone={onSpinDone} />
+          </div>
+          <div className="drum-count">{view.remaining.length} balls left in the drum</div>
+        </div>
+
+        <RangeBar current={view.current} remaining={view.remaining} />
+
+        <p className="status" role="status">
+          {status}
+        </p>
+
+        <div className="bet-panel">
+          <div className="bet-row">
+            <div className="chips" role="group" aria-label="Bet amount">
+              {CHIPS.map((c) => (
+                <button
+                  key={c}
+                  className={`chip ${stake === c ? 'on' : ''}`}
+                  onClick={() => setStake(c)}
+                  disabled={spinning || c > game.balance}
+                  aria-pressed={stake === c}
+                >
+                  {c}
+                </button>
+              ))}
             </div>
-            <div>
-              <span className="label">Multiplier</span>
-              <span className="value mult">×{view.multiplier.toFixed(2)}</span>
-            </div>
-            <div>
-              <span className="label">{view.phase === 'cashed' ? 'Won' : 'Cash out'}</span>
-              <span className="value win">
-                {view.phase === 'cashed' ? fmt(view.payout) : viewPlaying ? fmt(potentialWin(view)) : '—'}
-              </span>
-            </div>
+            <label className="stake-input" htmlFor="stake">
+              <span className="label">Bet</span>
+              <input
+                id="stake"
+                type="number"
+                min={1}
+                step={1}
+                value={stake}
+                disabled={spinning}
+                onChange={(e) => setStake(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+              />
+            </label>
           </div>
 
-          <div className="ball-wrap">
-            <div className={`marquee ${spinning ? 'on' : ''}`}>
-              <Reel target={game.current} spinKey={spinKey} onDone={onSpinDone} />
-            </div>
-            <div className="drum-count">
-              {viewPlaying ? `${view.remaining.length} balls left in the drum` : view.phase === 'idle' ? `${TOTAL_BALLS} balls in the drum` : ' '}
-            </div>
-          </div>
-
-          <RangeBar current={view.current} remaining={view.remaining} />
-
-          <p className="status" role="status">
-            {status}
-          </p>
-
-          {viewPlaying ? (
+          {broke ? (
+            <button className="btn refill" onClick={() => setGame((g) => ({ ...g, balance: START_BALANCE, last: null }))}>
+              Out of play money. Refill to {fmt(START_BALANCE)}
+            </button>
+          ) : (
             <div className="actions">
               <button
                 className="btn guess higher"
-                onClick={() => onGuess('higher')}
-                disabled={spinning || !higher || higher.multiplier === null}
+                onClick={() => onBet('higher')}
+                disabled={spinning || !stakeOk || higher.multiplier === null}
               >
                 <span className="g-title">▲ Higher</span>
-                <span className="g-odds">
-                  {spinning ? '…' : higher?.multiplier ? `×${higher.multiplier.toFixed(2)} · ${pct(higher.chance)}` : 'none left'}
-                </span>
-              </button>
-              <button className="btn cash" onClick={onCashOut} disabled={spinning || !view.last}>
-                <span className="g-title">Cash out</span>
-                <span className="g-odds">{fmt(potentialWin(view))}</span>
+                <span className="g-odds">{oddsText(higher)}</span>
+                <span className="g-win">{spinning ? ' ' : winText(higher)}</span>
               </button>
               <button
                 className="btn guess lower"
-                onClick={() => onGuess('lower')}
-                disabled={spinning || !lower || lower.multiplier === null}
+                onClick={() => onBet('lower')}
+                disabled={spinning || !stakeOk || lower.multiplier === null}
               >
                 <span className="g-title">▼ Lower</span>
-                <span className="g-odds">
-                  {spinning ? '…' : lower?.multiplier ? `×${lower.multiplier.toFixed(2)} · ${pct(lower.chance)}` : 'none left'}
-                </span>
+                <span className="g-odds">{oddsText(lower)}</span>
+                <span className="g-win">{spinning ? ' ' : winText(lower)}</span>
               </button>
             </div>
-          ) : (
-            <div className="bet">
-              <div className="chips">
-                {CHIPS.map((c) => (
-                  <button
-                    key={c}
-                    className={`chip ${stake === c ? 'on' : ''}`}
-                    onClick={() => setStake(c)}
-                    disabled={c > view.balance}
-                  >
-                    {c}
-                  </button>
-                ))}
-              </div>
-              <label className="stake-input">
-                <span className="label">Stake</span>
-                <input
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={stake}
-                  onChange={(e) => setStake(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
-                />
-              </label>
-              {broke ? (
-                <button className="btn deal" onClick={() => setGame(newGame(START_BALANCE))}>
-                  Refill to {START_BALANCE}
-                </button>
-              ) : (
-                <button className="btn deal" onClick={deal} disabled={!stakeOk || spinning}>
-                  {view.phase === 'idle' ? 'Draw first ball' : 'Play again'}
-                </button>
-              )}
-            </div>
           )}
-          <p className="keys">Keys: H or ↑ higher · L or ↓ lower · C cash out · Enter to draw</p>
-        </section>
+          {!stakeOk && !broke && <p className="bet-error">Bet must be between 1 and your balance.</p>}
+        </div>
 
-        <aside className="side">
-          <div className="history">
-            <div className="side-head">
-              <h2>This round</h2>
-              {streak > 0 && <span className="streak">{streak} correct</span>}
-            </div>
-            <div className="history-row">
-              {view.drawn.length === 0 && <span className="muted">No balls yet</span>}
-              {view.drawn.map((b, i) => (
-                <Ball key={b} n={b} size="sm" animKey={i} />
-              ))}
-            </div>
-          </div>
-
-          <div className="board" aria-label="Bingo 75 board">
-            {LETTERS.map((l, row) => (
-              <div className="board-row" key={l}>
-                <span className={`board-letter col-${l}`}>{l}</span>
-                {Array.from({ length: 15 }, (_, i) => row * 15 + i + 1).map((n) => (
-                  <span
-                    key={n}
-                    className={`cell ${drawnSet.has(n) ? `hit col-${l}` : ''} ${n === view.current ? 'now' : ''}`}
-                  >
-                    {n}
-                  </span>
-                ))}
-              </div>
-            ))}
-          </div>
-
-          <details className="rules">
-            <summary>How it works</summary>
-            <p>
-              75 bingo balls, drawn without replacement. Guess whether the next ball is higher or lower than the one
-              showing. Each correct guess multiplies your win by the odds of what is left in the drum: the fewer balls
-              that can win, the bigger the multiplier. A wrong guess loses the stake. Cash out any time after your
-              first correct guess.
-            </p>
-            <p>The middle ball is 38: 37 balls sit below it and 37 above. The bar under the reel shows where the current ball sits and how many balls are left on each side.</p>
-            <p>Multipliers pay 97% of fair odds. Play money only, no real value.</p>
-          </details>
-        </aside>
+        <p className="keys">Keys: H or ↑ for higher, L or ↓ for lower</p>
       </main>
     </div>
   );
