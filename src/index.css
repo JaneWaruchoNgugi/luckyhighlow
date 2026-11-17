@@ -1,21 +1,22 @@
-/* Bingo hall at night: deep plum room, marquee gold, B-I-N-G-O column colors as the only other hues. */
+/* Night bingo hall: ink-indigo room, marquee gold, B-I-N-G-O column colors as the only other hues. */
 :root {
-  --bg: #120d26;
-  --bg-glow: #2a1a5e;
-  --surface: #1c1540;
-  --surface-2: #261c55;
-  --line: rgba(255, 255, 255, 0.09);
-  --text: #f7f2ff;
-  --muted: #a99fcb;
+  --bg: #0c0a1d;
+  --bg-glow: #2b1f6b;
+  --panel: #15122c;
+  --panel-2: #1d1940;
+  --raise: #272254;
+  --line: rgba(255, 255, 255, 0.08);
+  --text: #f5f2ff;
+  --muted: #9a93c2;
   --gold: #ffc94d;
-  --gold-deep: #e09a12;
-  --win: #4be3a4;
-  --win-deep: #16a56d;
-  --lose: #ff6b8b;
-  --lose-deep: #d63a5f;
+  --gold-deep: #d98e0b;
+  --win: #34e3a0;
+  --win-deep: #0e9e66;
+  --lose: #ff5f87;
+  --lose-deep: #c92a57;
   --B: #4c8dff;
   --I: #ff5a6e;
-  --N: #c9c3e6;
+  --N: #cbc5ea;
   --G: #3fd28a;
   --O: #ffab3d;
   --font-display: 'Lilita One', 'Arial Rounded MT Bold', 'Trebuchet MS', system-ui, sans-serif;
@@ -28,9 +29,9 @@ html, body, #root { margin: 0; min-height: 100%; }
 body {
   background-color: var(--bg);
   background-image:
-    radial-gradient(900px 500px at 50% -10%, var(--bg-glow), transparent 70%),
-    radial-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px);
-  background-size: auto, 22px 22px;
+    radial-gradient(1000px 520px at 50% -12%, var(--bg-glow), transparent 70%),
+    radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: auto, 24px 24px;
   color: var(--text);
   min-height: 100vh;
 }

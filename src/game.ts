@@ -48,25 +48,37 @@ export const defaultRng: Rng = () => {
   return buf[0] / 2 ** 32;
 };
 
-export interface BetResult {
+/** A bet placed during the betting window, settled on the next draw. */
+export interface Bet {
   dir: Direction;
   stake: number;
-  ball: number;
-  won: boolean;
-  /** Multiplier the bet was placed at. */
+  /** Multiplier locked in when the bet was placed. */
   step: number;
-  /** Amount credited to the balance (0 on a loss). */
+}
+
+export interface RoundResult {
+  round: number;
+  /** Ball that was showing when bets were taken. */
+  from: number;
+  /** Ball drawn. */
+  ball: number;
+  bet: Bet | null;
+  won: boolean;
+  /** Amount credited to the balance (0 on a loss or no bet). */
   payout: number;
 }
 
 export interface GameState {
   balance: number;
+  /** Round number now taking bets. */
+  round: number;
   /** Ball showing now. */
   current: number;
   /** Balls still in the drum (excludes current). */
   remaining: number[];
-  /** Result of the last bet, for feedback. */
-  last: BetResult | null;
+  /** This round's bet, already taken off the balance. */
+  bet: Bet | null;
+  last: RoundResult | null;
 }
 
 function takeRandom(pool: readonly number[], rng: Rng): [number, number[]] {
@@ -81,28 +93,44 @@ const fullDrum = () => Array.from({ length: TOTAL_BALLS }, (_, i) => i + 1);
 /** Fresh drum with the first ball already showing. */
 export function newGame(balance: number, rng: Rng = defaultRng): GameState {
   const [current, remaining] = takeRandom(fullDrum(), rng);
-  return { balance, current, remaining, last: null };
+  return { balance, round: 1, current, remaining, bet: null, last: null };
+}
+
+/** Returns any bet already placed this round to the balance. */
+export function cancelBet(state: GameState): GameState {
+  if (!state.bet) return state;
+  return { ...state, balance: round2(state.balance + state.bet.stake), bet: null };
 }
 
 /**
- * One bet: the stake comes off the balance, the next ball is drawn, and a win
- * pays stake x multiplier straight back into the balance. When the drum runs
- * out it is refilled with every ball except the one showing.
+ * Places (or replaces) this round's bet. The stake comes off the balance now;
+ * the multiplier is locked at the odds for the ball showing.
  */
-export function placeBet(state: GameState, dir: Direction, stake: number, rng: Rng = defaultRng): GameState {
+export function placeBet(state: GameState, dir: Direction, stake: number): GameState {
+  const base = cancelBet(state);
   if (!Number.isFinite(stake) || stake <= 0) throw new Error('Stake must be positive');
-  if (stake > state.balance) throw new Error('Stake is more than your balance');
-  const odds = oddsFor(state.current, state.remaining, dir);
+  if (stake > base.balance) throw new Error('Stake is more than your balance');
+  const odds = oddsFor(base.current, base.remaining, dir);
   if (odds.multiplier === null) throw new Error(`No ${dir} balls left`);
+  return { ...base, balance: round2(base.balance - stake), bet: { dir, stake, step: odds.multiplier } };
+}
+
+/**
+ * Closes betting and draws the next ball. A winning bet pays stake x locked
+ * multiplier into the balance. The drum refills when it runs out.
+ */
+export function drawRound(state: GameState, rng: Rng = defaultRng): GameState {
   const [ball, rest] = takeRandom(state.remaining, rng);
-  const won = dir === 'higher' ? ball > state.current : ball < state.current;
-  const payout = won ? round2(stake * odds.multiplier) : 0;
-  const remaining = rest.length > 0 ? rest : fullDrum().filter((b) => b !== ball);
+  const bet = state.bet;
+  const won = bet !== null && (bet.dir === 'higher' ? ball > state.current : ball < state.current);
+  const payout = won ? round2(bet.stake * bet.step) : 0;
   return {
-    balance: round2(state.balance - stake + payout),
+    balance: round2(state.balance + payout),
+    round: state.round + 1,
     current: ball,
-    remaining,
-    last: { dir, stake, ball, won, step: odds.multiplier, payout },
+    remaining: rest.length > 0 ? rest : fullDrum().filter((b) => b !== ball),
+    bet: null,
+    last: { round: state.round, from: state.current, ball, bet, won, payout },
   };
 }
 

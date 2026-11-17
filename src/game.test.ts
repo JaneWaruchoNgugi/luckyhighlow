@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { letterFor, newGame, oddsFor, placeBet, RETURN_TO_PLAYER, type GameState, type Rng } from './game';
+import { cancelBet, drawRound, letterFor, newGame, oddsFor, placeBet, RETURN_TO_PLAYER, type GameState, type Rng } from './game';
 
 const all = () => Array.from({ length: 75 }, (_, i) => i + 1);
 
@@ -11,7 +11,7 @@ function pick(pool: readonly number[], target: number): Rng {
 }
 
 function at(current: number, balance = 100): GameState {
-  return { balance, current, remaining: all().filter((b) => b !== current), last: null };
+  return { balance, round: 1, current, remaining: all().filter((b) => b !== current), bet: null, last: null };
 }
 
 describe('letterFor', () => {
@@ -42,41 +42,59 @@ describe('oddsFor', () => {
   });
 });
 
-describe('placeBet', () => {
+describe('live rounds', () => {
   it('starts with a ball showing and 74 in the drum', () => {
     const g = newGame(1000);
     expect(g.remaining).toHaveLength(74);
     expect(g.remaining).not.toContain(g.current);
+    expect(g.round).toBe(1);
   });
 
-  it('adds a win straight to the balance', () => {
-    const s = at(20);
-    const step = oddsFor(20, s.remaining, 'higher').multiplier!;
-    const next = placeBet(s, 'higher', 10, pick(s.remaining, 50));
+  it('takes the stake when the bet is placed and pays a win on the draw', () => {
+    const s = placeBet(at(20), 'higher', 10);
+    const step = s.bet!.step;
+    expect(s.balance).toBe(90);
+    const next = drawRound(s, pick(s.remaining, 50));
     expect(next.current).toBe(50);
-    expect(next.last).toMatchObject({ won: true, stake: 10, payout: Math.round(10 * step * 100) / 100 });
-    expect(next.balance).toBeCloseTo(100 - 10 + 10 * step, 2);
+    expect(next.bet).toBeNull();
+    expect(next.round).toBe(2);
+    expect(next.last).toMatchObject({ from: 20, ball: 50, won: true, payout: Math.round(10 * step * 100) / 100 });
+    expect(next.balance).toBeCloseTo(90 + 10 * step, 2);
     expect(next.remaining).not.toContain(50);
   });
 
-  it('takes the stake on a loss and keeps playing from the new ball', () => {
-    const s = at(40);
-    const next = placeBet(s, 'higher', 25, pick(s.remaining, 3));
+  it('keeps the stake on a loss', () => {
+    const s = placeBet(at(40), 'higher', 25);
+    const next = drawRound(s, pick(s.remaining, 3));
     expect(next.balance).toBe(75);
-    expect(next.current).toBe(3);
     expect(next.last).toMatchObject({ won: false, payout: 0 });
   });
 
+  it('draws with no bet and leaves the balance alone', () => {
+    const s = at(40);
+    const next = drawRound(s, pick(s.remaining, 60));
+    expect(next.balance).toBe(100);
+    expect(next.last).toMatchObject({ bet: null, won: false, ball: 60 });
+  });
+
+  it('replacing or cancelling a bet refunds the first stake', () => {
+    let s = placeBet(at(40), 'higher', 30);
+    s = placeBet(s, 'lower', 50);
+    expect(s.balance).toBe(50);
+    expect(s.bet?.dir).toBe('lower');
+    s = cancelBet(s);
+    expect(s.balance).toBe(100);
+    expect(s.bet).toBeNull();
+  });
+
   it('never repeats a ball until the drum is refilled', () => {
-    let s = newGame(1e9);
+    let s = newGame(0);
     const seen = new Set([s.current]);
     for (let i = 0; i < 74; i++) {
-      const dir = oddsFor(s.current, s.remaining, 'higher').chance >= 0.5 ? 'higher' : 'lower';
-      s = placeBet(s, dir, 1);
+      s = drawRound(s);
       expect(seen.has(s.current)).toBe(false);
       seen.add(s.current);
     }
-    // Drum emptied on the last draw, so it refills with everything but the ball showing.
     expect(s.remaining).toHaveLength(74);
     expect(s.remaining).not.toContain(s.current);
   });
