@@ -1530,36 +1530,10 @@ label.set-row {
   background: #fff;
 }
 .switch:focus-visible,
-.seg button:focus-visible,
 .set-btn:focus-visible,
 .sheet-close:focus-visible {
   outline: 2px solid var(--gold);
   outline-offset: 2px;
-}
-.seg {
-  display: inline-flex;
-  flex: none;
-  border-radius: 999px;
-  padding: 3px;
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid var(--line);
-}
-.seg button {
-  min-width: 42px;
-  padding: 6px 10px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font: inherit;
-  font-weight: 800;
-  font-size: 14px;
-  cursor: pointer;
-}
-.seg button.on {
-  background: var(--neon);
-  color: #03200d;
-  box-shadow: 0 0 10px rgba(57, 255, 106, 0.6);
 }
 .set-actions {
   display: flex;
