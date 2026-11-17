@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { cancelBet, drawRound, letterFor, newGame, oddsFor, placeBet, type Direction, type GameState } from './game';
-import { Reel } from './Reel';
 import { RangeBar } from './RangeBar';
 import { Tour } from './Tour';
+import { GameCanvas, type LightShow } from './GameCanvas';
 import './App.css';
 
 const START_BALANCE = 1000;
@@ -169,12 +169,23 @@ export default function App() {
     status = `Place your bets. Draw in ${secondsLeft}s.`;
     resultClass = 'idle';
   }
+  const lightShow: LightShow =
+    phase === 'drawing'
+      ? 'draw'
+      : showResult && last.bet
+        ? last.won
+          ? 'win'
+          : 'lose'
+        : betting && secondsLeft <= 5 && !touring
+          ? 'hurry'
+          : 'idle';
   const flash = showResult && last.bet ? (last.won ? 'win' : 'lose') : null;
 
   const setBet = (n: number) => setStake(Math.max(1, Math.min(Math.floor(available), Math.floor(n))));
 
   const guessButton = (dir: Direction, o: typeof higher) => {
     const mine = myBet?.dir === dir;
+    const pays = mine ? myBet.stake * myBet.step : o.multiplier !== null && stakeOk ? stake * o.multiplier : null;
     return (
       <button
         className={`btn guess ${dir} ${mine ? 'picked' : ''}`}
@@ -183,13 +194,21 @@ export default function App() {
         aria-pressed={mine}
         aria-keyshortcuts={dir === 'higher' ? 'H ArrowUp' : 'L ArrowDown'}
       >
-        <span className="g-title">{dir === 'higher' ? '▲ Higher' : '▼ Lower'}</span>
-        <span className="g-meta">
-          {mine
-            ? `Your bet ${fmt(myBet.stake)} · pays ${fmt(myBet.stake * myBet.step)}`
-            : o.multiplier === null
+        {mine && <span className="g-ribbon">Your bet · {fmt(myBet.stake)}</span>}
+        <span className="g-icon" aria-hidden="true">
+          {dir === 'higher' ? '▲' : '▼'}
+        </span>
+        <span className="g-text">
+          <span className="g-title">{dir === 'higher' ? 'Higher' : 'Lower'}</span>
+          <span className="g-sub">
+            {o.multiplier === null
               ? 'No balls left'
-              : `Pays ${stakeOk ? fmt(stake * o.multiplier) : '–'}`}
+              : `×${(mine ? myBet.step : o.multiplier).toFixed(2)} · ${pct(o.chance)}`}
+          </span>
+        </span>
+        <span className="g-pay">
+          <span className="g-pay-label">{mine ? 'Pays' : 'Win'}</span>
+          <span className="g-pay-amount">{pays === null ? '–' : fmt(pays)}</span>
         </span>
       </button>
     );
@@ -226,30 +245,25 @@ export default function App() {
 
       <main className="table">
         <section className="game" aria-label="Game">
-          <div className="live-wrap" data-tour="timer">
-            <div className="live-bar">
-              <span className="live-badge">
-                <span className="live-dot" aria-hidden="true" />
-                Live
-              </span>
-              <span className="round-no">Round {view.round}</span>
-              <span className={`countdown ${betting && secondsLeft <= 5 ? 'hurry' : ''}`} aria-hidden="true">
-                {betting ? `${secondsLeft}s` : phase === 'drawing' ? 'Drawing' : 'Next round'}
-              </span>
-            </div>
-            <div className="timer" aria-hidden="true">
-              <span className="timer-fill" style={{ transform: `scaleX(${betProgress})` }} />
-            </div>
-          </div>
-
           <p className={`toast ${resultClass}`} role="status">
             {status}
           </p>
 
           <div className="arena" data-tour="arena">
             {oddsCard('lower', lower)}
-            <div className={`marquee ${phase === 'drawing' ? 'on' : ''}`} data-tour="ball">
-              <Reel target={game.current} spinKey={spinKey} onDone={onSpinDone} />
+            <div className="canvas-wrap" data-tour="ball">
+              <GameCanvas
+                target={game.current}
+                spinKey={spinKey}
+                show={lightShow}
+                hud={{
+                  round: view.round,
+                  secondsLeft: betting ? secondsLeft : null,
+                  progress: betProgress,
+                  label: phase === 'drawing' ? 'DRAW' : 'NEXT',
+                }}
+                onDone={onSpinDone}
+              />
             </div>
             {oddsCard('higher', higher)}
           </div>
@@ -261,13 +275,26 @@ export default function App() {
         </section>
 
         <aside className="controls" aria-label="Bet">
+          <div className="panel-head">
+            <span className="panel-title">Your bet</span>
+            <span className={`panel-state ${betting ? 'open' : 'closed'}`}>
+              {betting ? 'Bets open' : 'Bets closed'}
+            </span>
+          </div>
+
           <div className="bet-group" data-tour="bet">
-            <div className="field">
-              <label className="label" htmlFor="stake">
-                Bet amount
-              </label>
-              <div className="stake-box">
+            <div className="stepper">
+              <button
+                className="step-btn"
+                onClick={() => setBet(stake - 5)}
+                disabled={!betting || stake <= 1}
+                aria-label="Lower bet by 5"
+              >
+                −
+              </button>
+              <label className="stake-box" htmlFor="stake">
                 <span className="stake-coin" aria-hidden="true" />
+                <span className="sr-only">Bet amount</span>
                 <input
                   id="stake"
                   type="number"
@@ -278,25 +305,38 @@ export default function App() {
                   disabled={!betting}
                   onChange={(e) => setStake(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
                 />
-                <button className="mini" onClick={() => setBet(stake / 2)} disabled={!betting}>
-                  ½
-                </button>
-                <button className="mini" onClick={() => setBet(stake * 2)} disabled={!betting}>
-                  2×
-                </button>
-              </div>
+              </label>
+              <button
+                className="step-btn"
+                onClick={() => setBet(stake + 5)}
+                disabled={!betting || stake >= available}
+                aria-label="Raise bet by 5"
+              >
+                +
+              </button>
+            </div>
+            <div className="quick">
+              <button onClick={() => setBet(stake / 2)} disabled={!betting}>
+                ½
+              </button>
+              <button onClick={() => setBet(stake * 2)} disabled={!betting}>
+                2×
+              </button>
+              <button onClick={() => setBet(available)} disabled={!betting}>
+                Max
+              </button>
             </div>
 
             <div className="chips" role="group" aria-label="Quick bets">
               {CHIPS.map((c) => (
                 <button
                   key={c}
-                  className={`chip ${stake === c ? 'on' : ''}`}
+                  className={`chip chip-${c} ${stake === c ? 'on' : ''}`}
                   onClick={() => setStake(c)}
                   disabled={!betting || c > available}
                   aria-pressed={stake === c}
                 >
-                  {c}
+                  <span>{c}</span>
                 </button>
               ))}
             </div>

@@ -38,9 +38,9 @@ const TOUR_STEPS: TourStep[] = [
     body: 'Tap a button to place your bet. The stake leaves your balance and your multiplier is locked. You can switch sides or cancel until the timer runs out.',
   },
   {
-    target: 'timer',
+    target: 'ball',
     title: 'Live rounds',
-    body: 'Every round lasts 15 seconds. When the timer hits zero, bets close and the next ball rolls in on the reel. Balls are not put back until the drum is empty.',
+    body: 'The badge shows the round number and the ring counts down. Every round lasts 15 seconds. When the timer hits zero, bets close and the next ball rolls in on the reel. Balls are not put back until the drum is empty.',
   },
   {
     target: 'balance',

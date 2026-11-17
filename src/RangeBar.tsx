@@ -19,12 +19,13 @@ export function RangeBar({ current, remaining }: { current: number | null; remai
         <span className="range-low">▼ {current === null ? '–' : lower} lower</span>
         <span className="range-high">{current === null ? '–' : higher} higher ▲</span>
       </div>
-      <div className="range-track" role="img" aria-label={current === null ? 'No ball yet' : `${lower} balls lower and ${higher} higher than ${current}`}>
+      <div
+        className="range-track"
+        role="img"
+        aria-label={current === null ? 'No ball yet' : `${lower} balls lower and ${higher} higher than ${current}`}
+      >
         {Array.from({ length: TOTAL_BALLS }, (_, i) => i + 1).map((n) => (
-          <span
-            key={n}
-            className={`tick col-${letterFor(n)} ${left.has(n) || current === null ? 'in' : 'out'}`}
-          />
+          <span key={n} className={`tick col-${letterFor(n)} ${left.has(n) || current === null ? 'in' : 'out'}`} />
         ))}
         <span className="range-mid" style={{ left: pos(MIDDLE) }} />
         {current !== null && (

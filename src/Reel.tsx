@@ -82,7 +82,12 @@ export function Reel({ target, spinKey, onDone }: { target: number | null; spinK
 
   const resting = !spinning;
   return (
-    <div className={`reel ${spinning ? 'spinning' : ''}`} aria-live="polite" aria-label={resting && target ? `${letterFor(target)} ${target}` : 'Drawing'}>
+    <div
+      className={`reel ${spinning ? 'spinning' : ''} ${resting && target ? `col-${letterFor(target)}` : ''}`}
+      aria-live="polite"
+      aria-label={resting && target ? `${letterFor(target)} ${target}` : 'Drawing'}
+    >
+      <div className="reel-rays" aria-hidden="true" />
       <div className="reel-strip" ref={stripEl} style={resting ? { transform: 'none', transition: 'none' } : undefined}>
         {strip.map((n, i) => (
           <div className="reel-item" key={i}>
