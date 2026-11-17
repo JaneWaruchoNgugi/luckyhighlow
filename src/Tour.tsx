@@ -20,7 +20,7 @@ const TOUR_STEPS: TourStep[] = [
   {
     target: 'arena',
     title: 'Read the odds',
-    body: 'The cards beside the ball show each side’s multiplier, chance and what your bet would win. The fewer balls that can win, the bigger the multiplier. Tap a card to bet on that side.',
+    body: 'The cards beside the ball show each side’s multiplier, chance and what your bet would win. The fewer balls that can win, the bigger the multiplier. On a computer you can also click a card to bet.',
   },
   {
     target: 'range',
@@ -40,7 +40,7 @@ const TOUR_STEPS: TourStep[] = [
   {
     target: 'ball',
     title: 'Live rounds',
-    body: 'Every round lasts 15 seconds and the message above the ball counts down. When the timer hits zero, bets close and the next ball rolls in on the reel. Balls are not put back until the drum is empty.',
+    body: 'Each round gives you 8 seconds to bet (change it in Settings), and the ring around the ball counts down. When the timer hits zero, bets close and the next ball rolls in on the reel. Balls are not put back until the drum is empty.',
   },
   {
     target: 'balance',

@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { cancelBet, drawRound, letterFor, newGame, oddsFor, placeBet, RETURN_TO_PLAYER, type GameState, type Rng } from './game';
+import {
+  cancelBet,
+  drawRound,
+  letterFor,
+  newGame,
+  oddsFor,
+  placeBet,
+  RETURN_TO_PLAYER,
+  type GameState,
+  type Rng,
+} from './game';
 
 const all = () => Array.from({ length: 75 }, (_, i) => i + 1);
 
@@ -26,7 +36,11 @@ describe('letterFor', () => {
 
 describe('oddsFor', () => {
   it('pays fair odds less the house edge at the middle ball', () => {
-    const o = oddsFor(38, all().filter((b) => b !== 38), 'higher');
+    const o = oddsFor(
+      38,
+      all().filter((b) => b !== 38),
+      'higher',
+    );
     expect(o.winning).toBe(37);
     expect(o.chance).toBeCloseTo(0.5);
     expect(o.multiplier).toBe(Math.floor(RETURN_TO_PLAYER * 2 * 100) / 100);
@@ -38,7 +52,13 @@ describe('oddsFor', () => {
     expect(oddsFor(1, all().slice(1), 'higher').multiplier).toBe(1.01);
   });
   it('long shots pay big', () => {
-    expect(oddsFor(74, all().filter((b) => b !== 74), 'higher').multiplier).toBe(71.78);
+    expect(
+      oddsFor(
+        74,
+        all().filter((b) => b !== 74),
+        'higher',
+      ).multiplier,
+    ).toBe(71.78);
   });
 });
 

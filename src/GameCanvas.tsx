@@ -22,7 +22,18 @@ interface Particle {
   kind: 'coin' | 'spark' | 'confetti';
 }
 
+/** Betting countdown drawn over the stage. */
+export interface Countdown {
+  /** Date.now() time when bets close. */
+  endsAt: number;
+  /** Length of the betting window in ms. */
+  totalMs: number;
+  /** Set while the clock is paused (How to play tour): ms left, frozen. */
+  frozenMs: number | null;
+}
+
 interface Scene {
+  countdown: Countdown | null;
   ball: number | null;
   strip: (number | null)[];
   spinStart: number | null;
@@ -30,17 +41,10 @@ interface Scene {
   showStart: number;
   particles: Particle[];
   onDone: () => void;
+  still: boolean;
 }
 
 const easeOut = (t: number) => 1 - Math.pow(1 - t, 4);
-
-function reducedMotion() {
-  try {
-    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  } catch {
-    return false;
-  }
-}
 
 function drawBall(ctx: CanvasRenderingContext2D, n: number | null, cx: number, cy: number, R: number) {
   // Body: glossy green
@@ -125,15 +129,20 @@ export function GameCanvas({
   target,
   spinKey,
   show,
+  countdown,
+  reduceMotion,
   onDone,
 }: {
   target: number | null;
   spinKey: number;
   show: LightShow;
+  countdown: Countdown | null;
+  reduceMotion: boolean;
   onDone: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scene = useRef<Scene>({
+    countdown,
     ball: target,
     strip: [target],
     spinStart: null,
@@ -141,8 +150,11 @@ export function GameCanvas({
     showStart: 0,
     particles: [],
     onDone,
+    still: reduceMotion,
   });
+  scene.current.still = reduceMotion;
   scene.current.onDone = onDone;
+  scene.current.countdown = countdown;
 
   useEffect(() => {
     const s = scene.current;
@@ -150,7 +162,7 @@ export function GameCanvas({
       s.ball = target;
       return;
     }
-    if (reducedMotion()) {
+    if (s.still) {
       s.ball = target;
       s.strip = [target];
       s.onDone();
@@ -167,7 +179,7 @@ export function GameCanvas({
     if (s.show === show) return;
     s.show = show;
     s.showStart = performance.now();
-    if (show === 'win' && !reducedMotion()) {
+    if (show === 'win' && !s.still) {
       const c = canvasRef.current;
       if (c) burst(s, c.clientWidth / 2, c.clientHeight * 0.46);
     }
@@ -178,7 +190,6 @@ export function GameCanvas({
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const still = reducedMotion();
     let raf = 0;
 
     const resize = () => {
@@ -195,6 +206,7 @@ export function GameCanvas({
       const s = scene.current;
       const W = canvas.clientWidth;
       const H = canvas.clientHeight;
+      const still = s.still;
       const t = still ? 0 : now / 1000;
       const since = (now - s.showStart) / 1000;
       ctx.clearRect(0, 0, W, H);
@@ -423,6 +435,83 @@ export function GameCanvas({
         ctx.beginPath();
         ctx.arc(cx, by, Rs, 0, Math.PI * 2);
         ctx.fill();
+      }
+      // Countdown ring round the dome, seconds badge on top, big 3-2-1 at the end
+      if (s.countdown) {
+        const cd = s.countdown;
+        const msLeft = Math.max(0, cd.frozenMs ?? cd.endsAt - Date.now());
+        const frac = Math.min(1, msLeft / cd.totalMs);
+        const secs = Math.ceil(msLeft / 1000);
+        const color = secs <= 3 ? '#ff3d5e' : secs <= 5 ? '#ffcf3f' : '#39ff6a';
+        const rr = Rs + 9;
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.lineWidth = 8;
+        ctx.strokeStyle = 'rgba(0,20,6,.55)';
+        ctx.beginPath();
+        ctx.arc(cx, by, rr, 0, Math.PI * 2);
+        ctx.stroke();
+        if (frac > 0) {
+          ctx.shadowColor = color;
+          ctx.shadowBlur = 16;
+          ctx.strokeStyle = color;
+          ctx.beginPath();
+          ctx.arc(cx, by, rr, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
+          ctx.stroke();
+          // Glowing head of the ring
+          const ha = -Math.PI / 2 + Math.PI * 2 * frac;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(cx + Math.cos(ha) * rr, by + Math.sin(ha) * rr, 5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+
+        // Seconds badge at the top of the ring
+        const bR = Math.max(22, R * 0.42);
+        const bY = by - rr;
+        const tick = 1 - (msLeft % 1000) / 1000;
+        const bump = still || secs > 5 ? 1 : 1 + 0.12 * Math.max(0, 1 - tick * 4);
+        ctx.save();
+        ctx.translate(cx, bY);
+        ctx.scale(bump, bump);
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 18;
+        ctx.fillStyle = '#021809';
+        ctx.beginPath();
+        ctx.arc(0, 0, bR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = color;
+        ctx.stroke();
+        ctx.fillStyle = secs <= 5 ? color : '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = font(bR * 1.05);
+        ctx.fillText(String(secs), 0, bR * 0.06);
+        ctx.restore();
+
+        // Final three seconds: a big number pops over the stage
+        if (secs <= 3 && secs > 0 && cd.frozenMs === null) {
+          const scale = still ? 1 : 1.5 - tick * 0.5;
+          const alpha = still ? 0.85 : Math.max(0, 1 - tick * 0.9);
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.translate(cx, by);
+          ctx.scale(scale, scale);
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.font = font(R * 2.1);
+          ctx.lineWidth = 8;
+          ctx.strokeStyle = '#2a0610';
+          ctx.shadowColor = '#ff3d5e';
+          ctx.shadowBlur = 30;
+          ctx.strokeText(String(secs), 0, R * 0.08);
+          ctx.fillStyle = '#ffe9a8';
+          ctx.fillText(String(secs), 0, R * 0.08);
+          ctx.restore();
+        }
       }
       ctx.restore();
 

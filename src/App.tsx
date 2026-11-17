@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { cancelBet, drawRound, letterFor, newGame, oddsFor, placeBet, type Direction, type GameState } from './game';
 import { RangeBar } from './RangeBar';
 import { Tour } from './Tour';
 import { GameCanvas, type LightShow } from './GameCanvas';
+import { SettingsPanel } from './SettingsPanel';
+import { loadSettings, saveSettings, type Settings } from './settings';
+import { setSound, sfx, unlockAudio } from './sound';
 import './App.css';
 
 const START_BALANCE = 1000;
@@ -52,12 +55,12 @@ function markTourSeen() {
 const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const pct = (n: number) => `${Math.round(n * 100)}%`;
 
-const BET_SECONDS = 15;
 const RESULT_MS = 3500;
 
 type Phase = 'betting' | 'drawing' | 'result';
 
 export default function App() {
+  const [settings, setSettings] = useState<Settings>(loadSettings);
   const [game, setGame] = useState<GameState>(() => newGame(loadBalance()));
   const [stake, setStake] = useState(10);
   /** While the reel spins, the screen keeps showing the state from before the draw. */
@@ -65,7 +68,10 @@ export default function App() {
   const [spinKey, setSpinKey] = useState(0);
   const [recent, setRecent] = useState<Recent[]>([]);
   const [phase, setPhase] = useState<Phase>('betting');
-  const [phaseEnds, setPhaseEnds] = useState(() => Date.now() + BET_SECONDS * 1000);
+  const [phaseEnds, setPhaseEnds] = useState(() => Date.now() + settings.roundSeconds * 1000);
+  /** Length of the current betting window; a new round length applies from the next round. */
+  const [windowMs, setWindowMs] = useState(() => settings.roundSeconds * 1000);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [touring, setTouring] = useState(() => !tourSeen());
   /** When the tour opened; the round clock stands still while it is open. */
@@ -74,19 +80,49 @@ export default function App() {
   const betting = phase === 'betting';
   const clock = pausedAt ?? now;
 
-  const openTour = useCallback(() => {
-    setTouring(true);
-    setPausedAt(Date.now());
-  }, []);
-  const closeTour = useCallback(() => {
-    markTourSeen();
-    setTouring(false);
+  const pause = useCallback(() => setPausedAt((p) => p ?? Date.now()), []);
+  const resume = useCallback(() => {
     if (pausedAt !== null) {
       const paused = Date.now() - pausedAt;
       setPhaseEnds((e) => e + paused);
     }
     setPausedAt(null);
   }, [pausedAt]);
+  const openTour = useCallback(() => {
+    setSettingsOpen(false);
+    setTouring(true);
+    pause();
+  }, [pause]);
+  const closeTour = useCallback(() => {
+    markTourSeen();
+    setTouring(false);
+    resume();
+  }, [resume]);
+  const openSettings = useCallback(() => {
+    sfx.click();
+    setSettingsOpen(true);
+    pause();
+  }, [pause]);
+  const closeSettings = useCallback(() => {
+    setSettingsOpen(false);
+    resume();
+  }, [resume]);
+
+  useEffect(() => {
+    setSound(settings.sound, settings.volume);
+    saveSettings(settings);
+  }, [settings]);
+
+  // Browsers only play sound after the first tap or key press.
+  useEffect(() => {
+    const unlock = () => unlockAudio();
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, []);
 
   useEffect(() => saveBalance(game.balance + (game.bet?.stake ?? 0)), [game.balance, game.bet]);
 
@@ -101,17 +137,22 @@ export default function App() {
     if (phase === 'betting') {
       setPhase('drawing');
       setPhaseEnds(Number.POSITIVE_INFINITY);
+      sfx.close();
+      if (!settings.reduceMotion) sfx.spin(1500);
       setBefore(game);
       setGame(drawRound(game));
       setSpinKey((k) => k + 1);
     } else if (phase === 'result') {
       setPhase('betting');
-      setPhaseEnds(Date.now() + BET_SECONDS * 1000);
+      setPhaseEnds(Date.now() + settings.roundSeconds * 1000);
+      setWindowMs(settings.roundSeconds * 1000);
     }
-  }, [now, phase, phaseEnds, game, pausedAt]);
+  }, [now, phase, phaseEnds, game, pausedAt, settings.roundSeconds, settings.reduceMotion]);
 
   const onSpinDone = useCallback(() => {
     const r = game.last;
+    sfx.land();
+    if (r?.bet) window.setTimeout(() => (r.won ? sfx.win() : sfx.lose()), 180);
     if (r) setRecent((list) => [{ round: r.round, ball: r.ball, up: r.ball > r.from }, ...list].slice(0, RECENT_MAX));
     setBefore(null);
     setPhase('result');
@@ -119,7 +160,18 @@ export default function App() {
   }, [game.last]);
 
   const secondsLeft = Math.max(0, Math.ceil((phaseEnds - clock) / 1000));
-  const betProgress = betting ? Math.max(0, Math.min(1, (phaseEnds - clock) / (BET_SECONDS * 1000))) : 0;
+
+  // Countdown ticks in the last five seconds of betting.
+  const lastTick = useRef(0);
+  useEffect(() => {
+    if (!betting || pausedAt !== null || secondsLeft > 5 || secondsLeft < 1) return;
+    if (lastTick.current === secondsLeft) return;
+    lastTick.current = secondsLeft;
+    sfx.tick(secondsLeft <= 3);
+  }, [betting, pausedAt, secondsLeft]);
+  useEffect(() => {
+    if (betting) lastTick.current = 0;
+  }, [betting]);
 
   const higher = oddsFor(view.current, view.remaining, 'higher');
   const lower = oddsFor(view.current, view.remaining, 'lower');
@@ -133,17 +185,20 @@ export default function App() {
       if (!betting || !stakeOk) return;
       if (oddsFor(game.current, game.remaining, dir).multiplier === null) return;
       setGame(placeBet(game, dir, stake));
+      sfx.bet();
     },
     [game, betting, stake, stakeOk],
   );
 
   const onCancel = useCallback(() => {
-    if (betting) setGame((g) => cancelBet(g));
-  }, [betting]);
+    if (!betting || !game.bet) return;
+    setGame((g) => cancelBet(g));
+    sfx.cancel();
+  }, [betting, game.bet]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (touring || e.target instanceof HTMLInputElement) return;
+      if (touring || settingsOpen || e.target instanceof HTMLInputElement) return;
       const k = e.key.toLowerCase();
       if (k === 'h' || e.key === 'ArrowUp') onBet('higher');
       else if (k === 'l' || e.key === 'ArrowDown') onBet('lower');
@@ -153,7 +208,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onBet, onCancel, touring]);
+  }, [onBet, onCancel, touring, settingsOpen]);
 
   const last = view.last;
   const showResult = phase === 'result' && last !== null;
@@ -174,16 +229,12 @@ export default function App() {
   } else if (myBet) {
     status = (
       <>
-        Bet on {myBet.dir === 'higher' ? 'Higher' : 'Lower'}. Draw in <b>{secondsLeft}s.</b>
+        Bet placed on <b>{myBet.dir === 'higher' ? 'Higher' : 'Lower'}</b>. Good luck!
       </>
     );
     resultClass = 'placed';
   } else {
-    status = (
-      <>
-        Place your bets. Draw in <b>{secondsLeft}s.</b>
-      </>
-    );
+    status = <>Place your bets!</>;
     resultClass = 'idle';
   }
   const lightShow: LightShow =
@@ -198,7 +249,11 @@ export default function App() {
           : 'idle';
   const flash = showResult && last.bet ? (last.won ? 'win' : 'lose') : null;
 
-  const setBet = (n: number) => setStake(Math.max(1, Math.min(Math.floor(available), Math.floor(n))));
+  const setBet = (n: number) => {
+    sfx.click();
+    setStake(Math.max(1, Math.min(Math.floor(available), Math.floor(n))));
+  };
+  const step = settings.betStep;
 
   const payFor = (dir: Direction, o: typeof higher) =>
     myBet?.dir === dir ? myBet.stake * myBet.step : o.multiplier !== null && stakeOk ? stake * o.multiplier : null;
@@ -268,7 +323,7 @@ export default function App() {
       </div>
 
       <header className="hdr">
-        <button className="menu" onClick={openTour} aria-label="How to play">
+        <button className="menu" onClick={openSettings} aria-label="Game settings">
           <span />
           <span />
           <span />
@@ -287,6 +342,10 @@ export default function App() {
               ?
             </span>
             How to play
+          </button>
+          <button className="pill gear" onClick={openSettings} aria-label="Game settings">
+            <Gear />
+            <span className="gear-label">Settings</span>
           </button>
           <div className={`pill balance ${flash ?? ''}`} aria-live="polite" data-tour="balance">
             <span className="coin" aria-hidden="true" />
@@ -307,11 +366,23 @@ export default function App() {
           <div className="arena" data-tour="arena">
             {oddsCard('lower', lower)}
             <div className="canvas-wrap" data-tour="ball">
-              <GameCanvas target={game.current} spinKey={spinKey} show={lightShow} onDone={onSpinDone} />
-              <span className="round-tag">
-                Round {view.round}
-                {betting && <i style={{ transform: `scaleX(${betProgress})` }} />}
-              </span>
+              <GameCanvas
+                target={game.current}
+                spinKey={spinKey}
+                show={lightShow}
+                countdown={
+                  betting
+                    ? {
+                        endsAt: phaseEnds,
+                        totalMs: windowMs,
+                        frozenMs: pausedAt !== null ? phaseEnds - pausedAt : null,
+                      }
+                    : null
+                }
+                reduceMotion={settings.reduceMotion}
+                onDone={onSpinDone}
+              />
+              <span className="round-tag">Round {view.round}</span>
             </div>
             {oddsCard('higher', higher)}
           </div>
@@ -333,9 +404,9 @@ export default function App() {
             <div className="stepper">
               <button
                 className="round-btn"
-                onClick={() => setBet(stake - 5)}
+                onClick={() => setBet(stake - step)}
                 disabled={!betting || stake <= 1}
-                aria-label="Lower bet by 5"
+                aria-label={`Lower bet by ${step}`}
               >
                 −
               </button>
@@ -355,9 +426,9 @@ export default function App() {
               </label>
               <button
                 className="round-btn"
-                onClick={() => setBet(stake + 5)}
+                onClick={() => setBet(stake + step)}
                 disabled={!betting || stake >= available}
-                aria-label="Raise bet by 5"
+                aria-label={`Raise bet by ${step}`}
               >
                 +
               </button>
@@ -385,27 +456,6 @@ export default function App() {
               {guessButton('lower', lower)}
             </div>
           )}
-
-          <div className="bet-info">
-            <div>
-              <span className="info-icon" aria-hidden="true">
-                <Trophy />
-              </span>
-              <span>
-                <span className="info-label">Current Multiplier</span>
-                <span className="info-value">{myBet ? `×${myBet.step.toFixed(2)}` : '— —'}</span>
-              </span>
-            </div>
-            <div>
-              <span className="info-icon" aria-hidden="true">
-                <Coins />
-              </span>
-              <span>
-                <span className="info-label">Potential Win</span>
-                <span className="info-value">{myBet ? fmt(myBet.stake * myBet.step) : '— —'}</span>
-              </span>
-            </div>
-          </div>
 
           {myBet && betting && (
             <button className="cancel" onClick={onCancel}>
@@ -440,8 +490,8 @@ export default function App() {
       </main>
 
       <p className="footnote">
-        A new ball is drawn every {BET_SECONDS} seconds. Play money only; multipliers pay 97% of fair odds. <kbd>H</kbd>{' '}
-        higher · <kbd>L</kbd> lower · <kbd>Esc</kbd> cancel
+        Bets close {settings.roundSeconds} seconds into each round. Play money only; multipliers pay 97% of fair odds.{' '}
+        <kbd>H</kbd> higher · <kbd>L</kbd> lower · <kbd>Esc</kbd> cancel
       </p>
 
       <button className="help-fab" onClick={openTour}>
@@ -449,6 +499,19 @@ export default function App() {
         How to play
       </button>
 
+      {settingsOpen && (
+        <SettingsPanel
+          settings={settings}
+          onChange={setSettings}
+          onClose={closeSettings}
+          onReplayTour={openTour}
+          onResetBalance={() => {
+            setGame((g) => ({ ...g, balance: START_BALANCE }));
+            sfx.win();
+          }}
+          startBalance={fmt(START_BALANCE)}
+        />
+      )}
       {touring && <Tour onClose={closeTour} />}
     </div>
   );
@@ -498,21 +561,23 @@ function Coins() {
   );
 }
 
-function Trophy() {
-  return (
-    <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M7 3h10v5a5 5 0 0 1-10 0z" fill="#ffd34d" stroke="#b77800" />
-      <path d="M7 5H3v2a4 4 0 0 0 4 4M17 5h4v2a4 4 0 0 1-4 4" fill="none" stroke="#ffd34d" strokeWidth="2" />
-      <path d="M10 13h4v4h-4zM7 18h10v3H7z" fill="#e9a400" />
-    </svg>
-  );
-}
-
 function Clock() {
   return (
     <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
       <path d="M4 12a8 8 0 1 0 2.3-5.6" fill="none" stroke="#ffd34d" strokeWidth="2.4" strokeLinecap="round" />
       <path d="M4 4v4h4M12 7v5l3 2" fill="none" stroke="#ffd34d" strokeWidth="2.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function Gear() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1l.3 2.6h4l.4-2.6a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"
+        transform="translate(-1 0)"
+      />
     </svg>
   );
 }
