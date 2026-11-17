@@ -103,3 +103,20 @@
 
 .rules summary { cursor: pointer; font-weight: 700; }
 .rules p { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 10px 0 0; }
+
+/* Reel: numbers slide from the bottom up and stop on the drawn ball. */
+.reel {
+  --reel-h: 190px;
+  position: relative; width: 210px; height: var(--reel-h); overflow: hidden;
+  border-radius: 24px; background: rgba(0,0,0,.28);
+  box-shadow: inset 0 0 0 1px var(--line), inset 0 10px 24px rgba(0,0,0,.45);
+}
+.reel::before, .reel::after {
+  content: ""; position: absolute; left: 0; right: 0; height: 34px; z-index: 1; pointer-events: none;
+}
+.reel::before { top: 0; background: linear-gradient(var(--felt), transparent); }
+.reel::after { bottom: 0; background: linear-gradient(transparent, var(--felt-2)); }
+.reel-strip { will-change: transform; }
+.reel-item { height: var(--reel-h); display: grid; place-items: center; }
+.reel .ball { animation: none; }
+.reel.spinning .ball { filter: blur(.4px); }

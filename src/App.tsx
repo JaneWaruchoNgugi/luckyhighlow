@@ -12,6 +12,7 @@ import {
   type Direction,
   type GameState,
 } from './game';
+import { Reel } from './Reel';
 import './App.css';
 
 const START_BALANCE = 1000;
@@ -61,36 +62,51 @@ export default function App() {
   const [game, setGame] = useState<GameState>(() => newGame(loadBalance()));
   const [stake, setStake] = useState(10);
   const [flash, setFlash] = useState<'win' | 'lose' | null>(null);
+  /** While the reel spins, the screen keeps showing the state from before the draw. */
+  const [before, setBefore] = useState<GameState | null>(null);
+  const [spinKey, setSpinKey] = useState(0);
+  const spinning = before !== null;
+  const view = before ?? game;
 
   useEffect(() => saveBalance(game.balance), [game.balance]);
 
   const playing = game.phase === 'playing';
   const higher = playing && game.current !== null ? oddsFor(game.current, game.remaining, 'higher') : null;
   const lower = playing && game.current !== null ? oddsFor(game.current, game.remaining, 'lower') : null;
-  const drawnSet = useMemo(() => new Set(game.drawn), [game.drawn]);
-  const broke = !playing && game.balance < 1;
+  const drawnSet = useMemo(() => new Set(view.drawn), [view.drawn]);
+  const broke = !playing && !spinning && game.balance < 1;
   const stakeOk = stake > 0 && stake <= game.balance;
 
   const deal = useCallback(() => {
-    if (!stakeOk || playing) return;
+    if (!stakeOk || playing || spinning) return;
     setFlash(null);
-    setGame((g) => startRound(g, stake));
-  }, [stake, stakeOk, playing]);
+    const next = startRound(game, stake);
+    setBefore({ ...next, current: game.current, drawn: [], phase: 'playing' });
+    setGame(next);
+    setSpinKey((k) => k + 1);
+  }, [stake, stakeOk, playing, spinning, game]);
 
   const onGuess = useCallback(
     (dir: Direction) => {
       const o = dir === 'higher' ? higher : lower;
-      if (!o || o.multiplier === null) return;
+      if (spinning || !o || o.multiplier === null) return;
       const next = guess(game, dir);
-      setFlash(next.last?.won ? 'win' : 'lose');
+      setFlash(null);
+      setBefore(game);
       setGame(next);
+      setSpinKey((k) => k + 1);
     },
-    [game, higher, lower],
+    [game, higher, lower, spinning],
   );
 
   const onCashOut = useCallback(() => {
-    if (playing) setGame((g) => cashOut(g));
-  }, [playing]);
+    if (playing && !spinning) setGame((g) => cashOut(g));
+  }, [playing, spinning]);
+
+  const onSpinDone = useCallback(() => {
+    setBefore(null);
+    setFlash(game.last ? (game.last.won ? 'win' : 'lose') : null);
+  }, [game]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -107,14 +123,16 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [playing, onGuess, onCashOut, deal]);
 
-  const streak = game.drawn.length - 1 - (game.phase === 'lost' ? 1 : 0);
+  const streak = view.drawn.length - 1 - (view.phase === 'lost' ? 1 : 0);
 
+  const viewPlaying = view.phase === 'playing';
   let status: string;
-  if (game.phase === 'idle') status = 'Pick a stake and draw the first ball.';
-  else if (game.phase === 'lost')
-    status = `${letterFor(game.last!.ball)} ${game.last!.ball} was ${game.last!.dir === 'higher' ? 'lower' : 'higher'}. Stake lost.`;
-  else if (game.phase === 'cashed') status = `Cashed out ${fmt(game.payout)} at ×${game.multiplier.toFixed(2)}.`;
-  else if (game.last) status = `Correct! ×${game.last.step.toFixed(2)} added. Keep going or cash out.`;
+  if (spinning) status = 'Drawing…';
+  else if (view.phase === 'idle') status = 'Pick a stake and draw the first ball.';
+  else if (view.phase === 'lost')
+    status = `${letterFor(view.last!.ball)} ${view.last!.ball} was ${view.last!.dir === 'higher' ? 'lower' : 'higher'}. Stake lost.`;
+  else if (view.phase === 'cashed') status = `Cashed out ${fmt(view.payout)} at ×${view.multiplier.toFixed(2)}.`;
+  else if (view.last) status = `Correct! ×${view.last.step.toFixed(2)} added. Keep going or cash out.`;
   else status = 'Will the next ball be higher or lower?';
 
   return (
@@ -126,7 +144,7 @@ export default function App() {
         </h1>
         <div className="balance" aria-live="polite">
           <span className="label">Play money</span>
-          <span className="amount">{fmt(game.balance)}</span>
+          <span className="amount">{fmt(view.balance)}</span>
         </div>
       </header>
 
@@ -135,24 +153,24 @@ export default function App() {
           <div className="stage-meta">
             <div>
               <span className="label">Stake</span>
-              <span className="value">{playing || game.phase !== 'idle' ? fmt(game.stake) : '—'}</span>
+              <span className="value">{view.phase !== 'idle' ? fmt(view.stake) : '—'}</span>
             </div>
             <div>
               <span className="label">Multiplier</span>
-              <span className="value mult">×{game.multiplier.toFixed(2)}</span>
+              <span className="value mult">×{view.multiplier.toFixed(2)}</span>
             </div>
             <div>
-              <span className="label">{game.phase === 'cashed' ? 'Won' : 'Cash out'}</span>
+              <span className="label">{view.phase === 'cashed' ? 'Won' : 'Cash out'}</span>
               <span className="value win">
-                {game.phase === 'cashed' ? fmt(game.payout) : playing ? fmt(potentialWin(game)) : '—'}
+                {view.phase === 'cashed' ? fmt(view.payout) : playing ? fmt(potentialWin(game)) : '—'}
               </span>
             </div>
           </div>
 
           <div className="ball-wrap">
-            <Ball n={game.current} animKey={game.drawn.length} />
+            <Reel target={game.current} spinKey={spinKey} onDone={onSpinDone} />
             <div className="drum-count">
-              {playing ? `${game.remaining.length} balls left` : game.phase === 'idle' ? `${TOTAL_BALLS} balls` : ''}
+              {viewPlaying ? `${view.remaining.length} balls left` : view.phase === 'idle' ? `${TOTAL_BALLS} balls` : ''}
             </div>
           </div>
 
@@ -160,30 +178,30 @@ export default function App() {
             {status}
           </p>
 
-          {playing ? (
+          {viewPlaying ? (
             <div className="actions">
               <button
                 className="btn guess higher"
                 onClick={() => onGuess('higher')}
-                disabled={!higher || higher.multiplier === null}
+                disabled={spinning || !higher || higher.multiplier === null}
               >
                 <span className="g-title">▲ Higher</span>
                 <span className="g-odds">
-                  {higher?.multiplier ? `×${higher.multiplier.toFixed(2)} · ${pct(higher.chance)}` : 'none left'}
+                  {spinning ? '…' : higher?.multiplier ? `×${higher.multiplier.toFixed(2)} · ${pct(higher.chance)}` : 'none left'}
                 </span>
               </button>
-              <button className="btn cash" onClick={onCashOut} disabled={!game.last}>
+              <button className="btn cash" onClick={onCashOut} disabled={spinning || !view.last}>
                 Cash out
                 <span className="g-odds">{fmt(potentialWin(game))}</span>
               </button>
               <button
                 className="btn guess lower"
                 onClick={() => onGuess('lower')}
-                disabled={!lower || lower.multiplier === null}
+                disabled={spinning || !lower || lower.multiplier === null}
               >
                 <span className="g-title">▼ Lower</span>
                 <span className="g-odds">
-                  {lower?.multiplier ? `×${lower.multiplier.toFixed(2)} · ${pct(lower.chance)}` : 'none left'}
+                  {spinning ? '…' : lower?.multiplier ? `×${lower.multiplier.toFixed(2)} · ${pct(lower.chance)}` : 'none left'}
                 </span>
               </button>
             </div>
@@ -195,7 +213,7 @@ export default function App() {
                     key={c}
                     className={`chip ${stake === c ? 'on' : ''}`}
                     onClick={() => setStake(c)}
-                    disabled={c > game.balance}
+                    disabled={c > view.balance}
                   >
                     {c}
                   </button>
@@ -216,8 +234,8 @@ export default function App() {
                   Refill to {START_BALANCE}
                 </button>
               ) : (
-                <button className="btn deal" onClick={deal} disabled={!stakeOk}>
-                  {game.phase === 'idle' ? 'Draw first ball' : 'Play again'}
+                <button className="btn deal" onClick={deal} disabled={!stakeOk || spinning}>
+                  {view.phase === 'idle' ? 'Draw first ball' : 'Play again'}
                 </button>
               )}
             </div>
@@ -232,8 +250,8 @@ export default function App() {
               {streak > 0 && <span className="streak">{streak} correct</span>}
             </div>
             <div className="history-row">
-              {game.drawn.length === 0 && <span className="muted">No balls yet</span>}
-              {game.drawn.map((b, i) => (
+              {view.drawn.length === 0 && <span className="muted">No balls yet</span>}
+              {view.drawn.map((b, i) => (
                 <Ball key={b} n={b} size="sm" animKey={i} />
               ))}
             </div>
@@ -246,7 +264,7 @@ export default function App() {
                 {Array.from({ length: 15 }, (_, i) => row * 15 + i + 1).map((n) => (
                   <span
                     key={n}
-                    className={`cell ${drawnSet.has(n) ? `hit col-${l}` : ''} ${n === game.current ? 'now' : ''}`}
+                    className={`cell ${drawnSet.has(n) ? `hit col-${l}` : ''} ${n === view.current ? 'now' : ''}`}
                   >
                     {n}
                   </span>
