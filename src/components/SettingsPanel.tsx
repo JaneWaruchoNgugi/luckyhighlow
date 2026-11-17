@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { type Settings } from './settings';
-import { sfx } from './sound';
+import { type Settings } from '../lib/settings';
+import { sfx } from '../lib/sound';
 
 export function SettingsPanel({
   settings,

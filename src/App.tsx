@@ -11,18 +11,18 @@ import {
   potOf,
   type Direction,
   type GameState,
-} from './game';
-import { RangeBar } from './RangeBar';
-import { Tour } from './Tour';
-import { GameCanvas, type LightShow } from './GameCanvas';
-import { SettingsPanel } from './SettingsPanel';
-import { loadSettings, saveSettings, systemReducedMotion, type Settings } from './settings';
-import { setSound, sfx, unlockAudio } from './sound';
-import './App.css';
+} from './game/game';
+import { GameCanvas, type LightShow } from './components/GameCanvas';
+import { Arrow, Clock, Coins, Crown, Gear } from './components/Icons';
+import { RangeBar } from './components/RangeBar';
+import { SettingsPanel } from './components/SettingsPanel';
+import { Tour } from './components/Tour';
+import { fmt, pct } from './lib/format';
+import { loadSettings, saveSettings, systemReducedMotion, type Settings } from './lib/settings';
+import { setSound, sfx, unlockAudio } from './lib/sound';
+import { loadBalance, markTourSeen, saveBalance, START_BALANCE, tourSeen } from './lib/storage';
+import './styles/App.css';
 
-const START_BALANCE = 1000;
-const STORAGE_KEY = 'luckyhighlow.balance';
-const TOUR_KEY = 'luckyhighlow.tourSeen';
 const RECENT_MAX = 6;
 
 interface Recent {
@@ -30,42 +30,6 @@ interface Recent {
   ball: number;
   up: boolean;
 }
-
-function loadBalance(): number {
-  try {
-    const v = Number(localStorage.getItem(STORAGE_KEY));
-    return Number.isFinite(v) && v > 0 ? v : START_BALANCE;
-  } catch {
-    return START_BALANCE;
-  }
-}
-
-function saveBalance(n: number) {
-  try {
-    localStorage.setItem(STORAGE_KEY, String(n));
-  } catch {
-    /* storage unavailable: balance lives for this visit only */
-  }
-}
-
-function tourSeen(): boolean {
-  try {
-    return localStorage.getItem(TOUR_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function markTourSeen() {
-  try {
-    localStorage.setItem(TOUR_KEY, '1');
-  } catch {
-    /* fine: the tour just shows again next visit */
-  }
-}
-
-const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const pct = (n: number) => `${Math.round(n * 100)}%`;
 
 const RESULT_MS = 3500;
 const BET_SECONDS = 8;
@@ -636,70 +600,5 @@ export default function App() {
       )}
       {touring && <Tour onClose={closeTour} />}
     </div>
-  );
-}
-
-function Arrow({ up }: { up: boolean }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className="arrow">
-      {up ? <path d="M12 3 4 13h5v8h6v-8h5z" /> : <path d="M12 21 4 11h5V3h6v8h5z" />}
-    </svg>
-  );
-}
-
-function Crown() {
-  return (
-    <svg className="crown" viewBox="0 0 64 44" aria-hidden="true">
-      <defs>
-        <linearGradient id="crownGold" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#fff3a8" />
-          <stop offset=".5" stopColor="#ffc928" />
-          <stop offset="1" stopColor="#c47a00" />
-        </linearGradient>
-      </defs>
-      <path
-        d="M4 14 18 26 32 4l14 22 14-12-6 26H10z"
-        fill="url(#crownGold)"
-        stroke="#7a4500"
-        strokeWidth="2.5"
-        strokeLinejoin="round"
-      />
-      <circle cx="4" cy="13" r="4" fill="#ffe16b" stroke="#7a4500" strokeWidth="2" />
-      <circle cx="32" cy="5" r="4" fill="#ffe16b" stroke="#7a4500" strokeWidth="2" />
-      <circle cx="60" cy="13" r="4" fill="#ffe16b" stroke="#7a4500" strokeWidth="2" />
-      <rect x="10" y="36" width="44" height="6" rx="2" fill="#e9a400" stroke="#7a4500" strokeWidth="2" />
-    </svg>
-  );
-}
-
-function Coins() {
-  return (
-    <svg className="icon coins" viewBox="0 0 24 24" aria-hidden="true">
-      <ellipse cx="9" cy="17" rx="7" ry="3" fill="#e9a400" />
-      <ellipse cx="9" cy="15" rx="7" ry="3" fill="#ffd34d" stroke="#b77800" />
-      <ellipse cx="15" cy="10" rx="7" ry="3" fill="#e9a400" />
-      <ellipse cx="15" cy="8" rx="7" ry="3" fill="#ffe27a" stroke="#b77800" />
-    </svg>
-  );
-}
-
-function Clock() {
-  return (
-    <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M4 12a8 8 0 1 0 2.3-5.6" fill="none" stroke="#ffd34d" strokeWidth="2.4" strokeLinecap="round" />
-      <path d="M4 4v4h4M12 7v5l3 2" fill="none" stroke="#ffd34d" strokeWidth="2.4" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function Gear() {
-  return (
-    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1l.3 2.6h4l.4-2.6a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"
-        transform="translate(-1 0)"
-      />
-    </svg>
   );
 }
