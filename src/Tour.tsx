@@ -30,7 +30,7 @@ const TOUR_STEPS: TourStep[] = [
   {
     target: 'bet',
     title: 'Choose your bet',
-    body: 'Use − and + or type an amount. ½ halves your bet, 2x doubles it and Max bets your whole balance.',
+    body: 'Use − and + or type an amount, or tap 10, 50, 100 or 500 to set your bet in one go.',
   },
   {
     target: 'guess',

@@ -7,7 +7,7 @@ Higher or Lower with Bingo 75 balls, built in React + TypeScript (Vite). Play mo
 A first-visit tour walks through the screen; reopen it any time with **How to play**.
 
 - Rounds are live: after an 8-second betting window (5, 8, 10 or 15 seconds in Settings) bets close and the next ball (1–75, with its B-I-N-G-O letter) rolls in on the reel.
-- During the betting window, set your bet (− / +, typed, ½, 2x or Max) and tap **Higher** or **Lower** (or the odds card beside the ball).
+- During the betting window, set your bet (− / +, typed, or the 10, 50, 100 and 500 shortcuts) and tap **Higher** or **Lower** (on a computer you can also click the odds card beside the ball).
   The stake leaves your balance and the multiplier is locked. You can switch sides or cancel until the timer ends.
 - A win pays `bet × multiplier` straight into your balance; a loss keeps the stake.
   Multiplier = `0.97 × balls left ÷ winning balls` (floored to 2 decimals, minimum ×1.01), so long shots pay more.

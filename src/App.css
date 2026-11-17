@@ -595,8 +595,8 @@
 }
 .quick {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
 }
 .quick button {
   height: 46px;
@@ -614,6 +614,11 @@
 }
 .quick button:disabled {
   opacity: 0.4;
+}
+.quick button.on {
+  border-color: var(--gold);
+  color: var(--gold);
+  box-shadow: 0 0 14px rgba(255, 207, 63, 0.5);
 }
 
 /* Higher and Lower buttons */

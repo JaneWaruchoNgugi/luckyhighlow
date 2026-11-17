@@ -56,6 +56,7 @@ const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 
 const pct = (n: number) => `${Math.round(n * 100)}%`;
 
 const RESULT_MS = 3500;
+const QUICK_BETS = [10, 50, 100, 500];
 
 type Phase = 'betting' | 'drawing' | 'result';
 
@@ -433,16 +434,18 @@ export default function App() {
                 +
               </button>
             </div>
-            <div className="quick">
-              <button onClick={() => setBet(stake / 2)} disabled={!betting}>
-                ½
-              </button>
-              <button onClick={() => setBet(stake * 2)} disabled={!betting}>
-                2x
-              </button>
-              <button onClick={() => setBet(available)} disabled={!betting}>
-                Max
-              </button>
+            <div className="quick" role="group" aria-label="Bet amount shortcuts">
+              {QUICK_BETS.map((n) => (
+                <button
+                  key={n}
+                  className={stake === n ? 'on' : ''}
+                  aria-pressed={stake === n}
+                  onClick={() => setBet(n)}
+                  disabled={!betting || n > available}
+                >
+                  {n}
+                </button>
+              ))}
             </div>
           </div>
 
