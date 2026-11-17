@@ -44,8 +44,8 @@ const TOUR_STEPS: TourStep[] = [
   },
   {
     target: 'balance',
-    title: 'Get paid',
-    body: 'A winning bet pays your stake times the multiplier straight into your balance. A losing bet keeps the stake. Play money only.',
+    title: 'Streaks and Cash Out',
+    body: 'A correct guess starts a win streak and the multiplier grows with every correct guess after it. Pick again to let the pot ride, or press Cash Out to bank it. A wrong guess loses the pot, and the risk meter shows how much is on the line. Play money only.',
   },
 ];
 

@@ -131,6 +131,7 @@ export function GameCanvas({
   show,
   countdown,
   reduceMotion,
+  burstKey = 0,
   onDone,
 }: {
   target: number | null;
@@ -138,6 +139,8 @@ export function GameCanvas({
   show: LightShow;
   countdown: Countdown | null;
   reduceMotion: boolean;
+  /** Changes to fire a coin burst (cash out). */
+  burstKey?: number;
   onDone: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -184,6 +187,13 @@ export function GameCanvas({
       if (c) burst(s, c.clientWidth / 2, c.clientHeight * 0.46);
     }
   }, [show]);
+
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!burstKey || !c || scene.current.still) return;
+    burst(scene.current, c.clientWidth / 2, c.clientHeight * 0.46);
+    burst(scene.current, c.clientWidth / 2, c.clientHeight * 0.46);
+  }, [burstKey]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
