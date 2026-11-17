@@ -1585,3 +1585,219 @@ label.set-row {
     flex-wrap: wrap;
   }
 }
+
+/* Current ball tag */
+.round-tag b {
+  color: var(--gold);
+  font-size: 15px;
+  margin-left: 2px;
+}
+
+/* Streak multiplier over the stage */
+.streak-tag {
+  position: absolute;
+  left: 50%;
+  top: 68%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 16px 6px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffe680, var(--gold) 55%, var(--gold-deep));
+  color: #2a1900;
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.6),
+    0 0 26px rgba(255, 207, 63, 0.8);
+  pointer-events: none;
+  animation: streak-pop 0.6s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+.streak-tag span {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.streak-tag b {
+  font-size: 26px;
+  line-height: 1;
+  font-weight: 900;
+}
+@keyframes streak-pop {
+  0% {
+    transform: translateX(-50%) scale(0.3);
+    opacity: 0;
+  }
+  60% {
+    transform: translateX(-50%) scale(1.25);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(-50%) scale(1);
+  }
+}
+
+/* Streak box and Cash Out */
+.streak-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 20px;
+  border: 2px solid rgba(255, 207, 63, 0.6);
+  background: radial-gradient(120% 140% at 50% 0%, rgba(255, 207, 63, 0.18), rgba(1, 15, 5, 0.7));
+  box-shadow: 0 0 22px rgba(255, 207, 63, 0.25);
+}
+.streak-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.streak-label {
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--muted);
+}
+.streak-mult {
+  font-size: 34px;
+  font-weight: 900;
+  color: var(--gold);
+  text-shadow: 0 0 16px rgba(255, 207, 63, 0.7);
+  font-variant-numeric: tabular-nums;
+  animation: pop 0.5s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+.cashout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 64px;
+  padding: 0 22px;
+  border-radius: 20px;
+  border: 3px solid rgba(255, 255, 255, 0.7);
+  background: linear-gradient(180deg, #fff1a6 0%, var(--gold) 45%, var(--gold-deep) 100%);
+  color: #2a1900;
+  font-size: 24px;
+  font-weight: 900;
+  box-shadow:
+    0 0 0 2px var(--gold-deep),
+    0 0 30px rgba(255, 207, 63, 0.7);
+  animation: cash-glow 1.2s ease-in-out infinite;
+  transition: transform 0.08s;
+}
+.cashout b {
+  font-size: 28px;
+  font-variant-numeric: tabular-nums;
+}
+.cashout:not(:disabled):active {
+  transform: translateY(2px) scale(0.99);
+}
+.cashout:disabled {
+  opacity: 0.5;
+  animation: none;
+  filter: saturate(0.6);
+}
+@keyframes cash-glow {
+  50% {
+    box-shadow:
+      0 0 0 2px var(--gold-deep),
+      0 0 46px rgba(255, 207, 63, 1);
+  }
+}
+.streak-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* Risk meter */
+.risk {
+  --risk: var(--neon);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.risk.r1 {
+  --risk: #c6ff3b;
+}
+.risk.r2 {
+  --risk: #ff9f2e;
+}
+.risk.r3 {
+  --risk: var(--lose);
+}
+.risk-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.risk-head b {
+  color: var(--risk);
+  font-size: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.risk-detail {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.risk-bar {
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(57, 255, 106, 0.18), rgba(255, 159, 46, 0.18), rgba(255, 61, 94, 0.18));
+  overflow: hidden;
+}
+.risk-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--risk);
+  box-shadow: 0 0 12px var(--risk);
+  transition:
+    width 0.5s cubic-bezier(0.2, 1.2, 0.4, 1),
+    background 0.3s;
+}
+.risk.r3 .risk-bar i {
+  animation: risk-pulse 0.8s ease-in-out infinite;
+}
+@keyframes risk-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+@media (max-width: 640px) {
+  .streak-tag {
+    top: 66%;
+    padding: 3px 12px 5px;
+  }
+  .streak-tag b {
+    font-size: 20px;
+  }
+  .streak-mult {
+    font-size: 28px;
+  }
+  .cashout {
+    height: 56px;
+    font-size: 20px;
+  }
+  .cashout b {
+    font-size: 22px;
+  }
+  .risk-head {
+    font-size: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .streak-tag,
+  .streak-mult,
+  .cashout,
+  .risk.r3 .risk-bar i {
+    animation: none;
+  }
+}

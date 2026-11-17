@@ -1,5 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { cancelBet, drawRound, letterFor, newGame, oddsFor, placeBet, type Direction, type GameState } from './game';
+import {
+  cancelBet,
+  cashOut,
+  drawRound,
+  floor2,
+  letterFor,
+  newGame,
+  oddsFor,
+  placeBet,
+  potOf,
+  type Direction,
+  type GameState,
+} from './game';
 import { RangeBar } from './RangeBar';
 import { Tour } from './Tour';
 import { GameCanvas, type LightShow } from './GameCanvas';
@@ -70,6 +82,8 @@ export default function App() {
   /** While the reel spins, the screen keeps showing the state from before the draw. */
   const [before, setBefore] = useState<GameState | null>(null);
   const [spinKey, setSpinKey] = useState(0);
+  /** Last cash out, for the coin burst and the balance badge. */
+  const [cashed, setCashed] = useState<{ amount: number; key: number } | null>(null);
   const [recent, setRecent] = useState<Recent[]>([]);
   const [phase, setPhase] = useState<Phase>('betting');
   const [phaseEnds, setPhaseEnds] = useState(() => Date.now() + BET_SECONDS * 1000);
@@ -126,7 +140,14 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => saveBalance(game.balance + (game.bet?.stake ?? 0)), [game.balance, game.bet]);
+  // Saved balance counts a placed stake and any streak pot as if cashed out.
+  useEffect(
+    () =>
+      saveBalance(
+        game.balance + (game.bet && !game.bet.ride ? game.bet.stake : 0) + (game.streak ? potOf(game.streak) : 0),
+      ),
+    [game.balance, game.bet, game.streak],
+  );
 
   // Live clock: ticks the countdown and moves the round along.
   useEffect(() => {
@@ -147,6 +168,7 @@ export default function App() {
     } else if (phase === 'result') {
       setPhase('betting');
       setPhaseEnds(Date.now() + BET_SECONDS * 1000);
+      setCashed(null);
     }
   }, [now, phase, phaseEnds, game, pausedAt]);
 
@@ -154,6 +176,7 @@ export default function App() {
     const r = game.last;
     sfx.land();
     if (r?.bet) window.setTimeout(() => (r.won ? sfx.win() : sfx.lose()), 180);
+    else if (r?.banked) window.setTimeout(() => sfx.cash(), 180);
     if (r) setRecent((list) => [{ round: r.round, ball: r.ball, up: r.ball > r.from }, ...list].slice(0, RECENT_MAX));
     setBefore(null);
     setPhase('result');
@@ -176,10 +199,13 @@ export default function App() {
 
   const higher = oddsFor(view.current, view.remaining, 'higher');
   const lower = oddsFor(view.current, view.remaining, 'lower');
-  const available = game.balance + (game.bet?.stake ?? 0);
-  const stakeOk = stake > 0 && stake <= available;
-  const broke = betting && !game.bet && game.balance < 1;
+  const streak = game.streak;
+  const riding = streak !== null;
+  const available = game.balance + (game.bet && !game.bet.ride ? game.bet.stake : 0);
+  const stakeOk = riding || (stake > 0 && stake <= available);
+  const broke = betting && !game.bet && !riding && game.balance < 1;
   const myBet = game.bet;
+  const pot = streak ? potOf(streak) : 0;
 
   const onBet = useCallback(
     (dir: Direction) => {
@@ -190,6 +216,13 @@ export default function App() {
     },
     [game, betting, stake, stakeOk],
   );
+
+  const onCashOut = useCallback(() => {
+    if (!betting || !game.streak) return;
+    setCashed({ amount: potOf(game.streak), key: Date.now() });
+    setGame(cashOut(game));
+    sfx.cash();
+  }, [betting, game]);
 
   const onCancel = useCallback(() => {
     if (!betting || !game.bet) return;
@@ -203,13 +236,14 @@ export default function App() {
       const k = e.key.toLowerCase();
       if (k === 'h' || e.key === 'ArrowUp') onBet('higher');
       else if (k === 'l' || e.key === 'ArrowDown') onBet('lower');
+      else if (k === 'c') onCashOut();
       else if (k === 'escape' || k === 'backspace') onCancel();
       else return;
       e.preventDefault();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onBet, onCancel, touring, settingsOpen]);
+  }, [onBet, onCancel, onCashOut, touring, settingsOpen]);
 
   const last = view.last;
   const showResult = phase === 'result' && last !== null;
@@ -220,19 +254,35 @@ export default function App() {
     resultClass = 'drawing';
   } else if (showResult && last.bet) {
     const tag = `${letterFor(last.ball)}-${last.ball}`;
-    status = last.won
-      ? `${tag}! You won ${fmt(last.payout)}.`
-      : `${tag} was ${last.bet.dir === 'higher' ? 'lower' : 'higher'}. You lost ${fmt(last.bet.stake)}.`;
+    if (last.won && last.streak) {
+      status = (
+        <>
+          {tag}! Correct. Streak <b>×{last.streak.mult.toFixed(2)}</b>, pot {fmt(potOf(last.streak))}.
+        </>
+      );
+    } else {
+      status = `${tag} was ${last.bet.dir === 'higher' ? 'lower' : 'higher'}. ${last.bet.ride ? 'Streak lost.' : `You lost ${fmt(last.bet.stake)}.`}`;
+    }
     resultClass = last.won ? 'win' : 'lose';
+  } else if (showResult && last.banked > 0) {
+    status = `${letterFor(last.ball)}-${last.ball} drawn. Streak banked: +${fmt(last.banked)}.`;
+    resultClass = 'win';
   } else if (showResult) {
     status = `${letterFor(last.ball)}-${last.ball} drawn. No bet this round.`;
     resultClass = 'idle';
+  } else if (cashed) {
+    status = `Cashed out +${fmt(cashed.amount)}. Place a new bet!`;
+    resultClass = 'win';
   } else if (myBet) {
     status = (
       <>
-        Bet placed on <b>{myBet.dir === 'higher' ? 'Higher' : 'Lower'}</b>. Good luck!
+        {myBet.ride ? 'Pot riding on' : 'Bet placed on'} <b>{myBet.dir === 'higher' ? 'Higher' : 'Lower'}</b>. Good
+        luck!
       </>
     );
+    resultClass = 'placed';
+  } else if (riding) {
+    status = <>Keep going, or cash out {fmt(pot)}!</>;
     resultClass = 'placed';
   } else {
     status = <>Place your bets!</>;
@@ -248,15 +298,24 @@ export default function App() {
         : betting && secondsLeft <= 5 && !touring
           ? 'hurry'
           : 'idle';
-  const flash = showResult && last.bet ? (last.won ? 'win' : 'lose') : null;
+  const flash =
+    cashed || (showResult && last.banked > 0) ? 'win' : showResult && last.bet ? (last.won ? 'win' : 'lose') : null;
+  const credited = cashed ? cashed.amount : showResult && last.banked > 0 ? last.banked : 0;
 
   const setBet = (n: number) => {
     sfx.click();
     setStake(Math.max(1, Math.min(Math.floor(available), Math.floor(n))));
   };
 
+  /** What a correct guess would be worth: the new pot during a streak, else stake x step. */
+  const winWith = (step: number) => (streak ? streak.stake * floor2(streak.mult * step) : stake * step);
   const payFor = (dir: Direction, o: typeof higher) =>
-    myBet?.dir === dir ? myBet.stake * myBet.step : o.multiplier !== null && stakeOk ? stake * o.multiplier : null;
+    myBet?.dir === dir ? winWith(myBet.step) : o.multiplier !== null && stakeOk ? winWith(o.multiplier) : null;
+  // Risk grows with the multiplier riding on the next guess.
+  const riskMult = myBet ? (streak ? streak.mult * myBet.step : myBet.step) : streak ? streak.mult : 1;
+  const riskLevel = riskMult < 1.6 ? 0 : riskMult < 3 ? 1 : riskMult < 8 ? 2 : 3;
+  const riskFill = Math.max(0.06, Math.min(1, Math.log(riskMult) / Math.log(25)));
+  const keepChance = myBet ? (myBet.dir === 'higher' ? higher.chance : lower.chance) : null;
 
   const guessButton = (dir: Direction, o: typeof higher) => {
     const mine = myBet?.dir === dir;
@@ -269,7 +328,9 @@ export default function App() {
         aria-pressed={mine}
         aria-keyshortcuts={dir === 'higher' ? 'H ArrowUp' : 'L ArrowDown'}
       >
-        {mine && <span className="g-ribbon">Your bet · {fmt(myBet.stake)}</span>}
+        {mine && (
+          <span className="g-ribbon">{myBet.ride ? `Riding ${fmt(pot)}` : `Your bet · ${fmt(myBet.stake)}`}</span>
+        )}
         <span className="g-icon" aria-hidden="true">
           <Arrow up={dir === 'higher'} />
         </span>
@@ -350,7 +411,11 @@ export default function App() {
           <div className={`pill balance ${flash ?? ''}`} aria-live="polite" data-tour="balance">
             <span className="coin" aria-hidden="true" />
             <span className="amount">{fmt(view.balance)}</span>
-            {showResult && last.won && <span className="balance-delta">+{fmt(last.payout)}</span>}
+            {credited > 0 && (
+              <span key={cashed?.key ?? last?.round} className="balance-delta">
+                +{fmt(credited)}
+              </span>
+            )}
           </div>
         </div>
       </header>
@@ -380,9 +445,25 @@ export default function App() {
                     : null
                 }
                 reduceMotion={REDUCE_MOTION}
+                burstKey={cashed?.key ?? 0}
                 onDone={onSpinDone}
               />
-              <span className="round-tag">Round {view.round}</span>
+              {view.streak && (
+                <span
+                  key={view.streak.wins}
+                  className="streak-tag"
+                  aria-label={`Streak multiplier ${view.streak.mult}`}
+                >
+                  <span>{view.streak.wins} in a row</span>
+                  <b>×{view.streak.mult.toFixed(2)}</b>
+                </span>
+              )}
+              <span className="round-tag">
+                Current ball{' '}
+                <b>
+                  {letterFor(view.current)}-{view.current}
+                </b>
+              </span>
             </div>
             {oddsCard('higher', higher)}
           </div>
@@ -400,53 +481,78 @@ export default function App() {
             </span>
           </div>
 
-          <div className="bet-controls" data-tour="bet">
-            <div className="stepper">
+          {streak ? (
+            <div className="streak-box" data-tour="bet">
+              <div className="streak-top">
+                <span className="streak-label">Win streak · {streak.wins} in a row</span>
+                <span key={streak.wins} className="streak-mult">
+                  ×{streak.mult.toFixed(2)}
+                </span>
+              </div>
               <button
-                className="round-btn"
-                onClick={() => setBet(stake - BET_STEP)}
-                disabled={!betting || stake <= 1}
-                aria-label={`Lower bet by ${BET_STEP}`}
+                className="cashout"
+                onClick={onCashOut}
+                disabled={!betting || myBet !== null}
+                aria-keyshortcuts="C"
               >
-                −
+                <span>Cash Out</span>
+                <b>{fmt(pot)}</b>
               </button>
-              <label className="stake-box" htmlFor="stake">
-                <span className="coin" aria-hidden="true" />
-                <span className="sr-only">Bet amount</span>
-                <input
-                  id="stake"
-                  type="number"
-                  inputMode="numeric"
-                  min={1}
-                  step={1}
-                  value={stake}
-                  disabled={!betting}
-                  onChange={(e) => setStake(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
-                />
-              </label>
-              <button
-                className="round-btn"
-                onClick={() => setBet(stake + BET_STEP)}
-                disabled={!betting || stake >= available}
-                aria-label={`Raise bet by ${BET_STEP}`}
-              >
-                +
-              </button>
+              <p className="streak-hint">
+                {myBet
+                  ? 'Cancel your pick to cash out instead.'
+                  : 'Pick Higher or Lower to let it ride. No pick banks it.'}
+              </p>
             </div>
-            <div className="quick" role="group" aria-label="Bet amount shortcuts">
-              {QUICK_BETS.map((n) => (
+          ) : (
+            <div className="bet-controls" data-tour="bet">
+              <div className="stepper">
                 <button
-                  key={n}
-                  className={stake === n ? 'on' : ''}
-                  aria-pressed={stake === n}
-                  onClick={() => setBet(n)}
-                  disabled={!betting || n > available}
+                  className="round-btn"
+                  onClick={() => setBet(stake - BET_STEP)}
+                  disabled={!betting || stake <= 1}
+                  aria-label={`Lower bet by ${BET_STEP}`}
                 >
-                  {n}
+                  −
                 </button>
-              ))}
+                <label className="stake-box" htmlFor="stake">
+                  <span className="coin" aria-hidden="true" />
+                  <span className="sr-only">Bet amount</span>
+                  <input
+                    id="stake"
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    step={1}
+                    value={stake}
+                    disabled={!betting}
+                    onChange={(e) => setStake(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+                  />
+                </label>
+                <button
+                  className="round-btn"
+                  onClick={() => setBet(stake + BET_STEP)}
+                  disabled={!betting || stake >= available}
+                  aria-label={`Raise bet by ${BET_STEP}`}
+                >
+                  +
+                </button>
+              </div>
+              <div className="quick" role="group" aria-label="Bet amount shortcuts">
+                {QUICK_BETS.map((n) => (
+                  <button
+                    key={n}
+                    className={stake === n ? 'on' : ''}
+                    aria-pressed={stake === n}
+                    onClick={() => setBet(n)}
+                    disabled={!betting || n > available}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {broke ? (
             <button className="refill" onClick={() => setGame((g) => ({ ...g, balance: START_BALANCE }))}>
@@ -459,9 +565,23 @@ export default function App() {
             </div>
           )}
 
+          <div className={`risk r${riskLevel}`} aria-label="Risk">
+            <div className="risk-head">
+              <span>Risk</span>
+              <b>{['Low', 'Medium', 'High', 'Extreme'][riskLevel]}</b>
+              <span className="risk-detail">
+                {riding ? `At risk ${fmt(pot)}` : myBet ? `At risk ${fmt(myBet.stake)}` : 'No bet yet'}
+                {keepChance !== null && ` · ${pct(keepChance)} to win`}
+              </span>
+            </div>
+            <div className="risk-bar">
+              <i style={{ width: `${riskFill * 100}%` }} />
+            </div>
+          </div>
+
           {myBet && betting && (
             <button className="cancel" onClick={onCancel}>
-              Cancel bet
+              {myBet.ride ? 'Cancel pick' : 'Cancel bet'}
             </button>
           )}
           {!stakeOk && !broke && <p className="bet-error">Bet must be between 1 and your balance.</p>}
@@ -493,7 +613,7 @@ export default function App() {
 
       <p className="footnote">
         Bets close {BET_SECONDS} seconds into each round. Play money only; multipliers pay 97% of fair odds.{' '}
-        <kbd>H</kbd> higher · <kbd>L</kbd> lower · <kbd>Esc</kbd> cancel
+        <kbd>H</kbd> higher · <kbd>L</kbd> lower · <kbd>C</kbd> cash out · <kbd>Esc</kbd> cancel
       </p>
 
       <button className="help-fab" onClick={openTour}>

@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   cancelBet,
+  cashOut,
   drawRound,
   letterFor,
   newGame,
   oddsFor,
   placeBet,
+  potOf,
   RETURN_TO_PLAYER,
   type GameState,
   type Rng,
@@ -21,7 +23,15 @@ function pick(pool: readonly number[], target: number): Rng {
 }
 
 function at(current: number, balance = 100): GameState {
-  return { balance, round: 1, current, remaining: all().filter((b) => b !== current), bet: null, last: null };
+  return {
+    balance,
+    round: 1,
+    current,
+    remaining: all().filter((b) => b !== current),
+    bet: null,
+    streak: null,
+    last: null,
+  };
 }
 
 describe('letterFor', () => {
@@ -70,7 +80,7 @@ describe('live rounds', () => {
     expect(g.round).toBe(1);
   });
 
-  it('takes the stake when the bet is placed and pays a win on the draw', () => {
+  it('takes the stake when the bet is placed and starts a streak on a win', () => {
     const s = placeBet(at(20), 'higher', 10);
     const step = s.bet!.step;
     expect(s.balance).toBe(90);
@@ -78,16 +88,61 @@ describe('live rounds', () => {
     expect(next.current).toBe(50);
     expect(next.bet).toBeNull();
     expect(next.round).toBe(2);
-    expect(next.last).toMatchObject({ from: 20, ball: 50, won: true, payout: Math.round(10 * step * 100) / 100 });
-    expect(next.balance).toBeCloseTo(90 + 10 * step, 2);
+    expect(next.streak).toEqual({ stake: 10, mult: step, wins: 1 });
+    expect(next.last).toMatchObject({ from: 20, ball: 50, won: true, banked: 0 });
+    expect(next.balance).toBe(90);
     expect(next.remaining).not.toContain(50);
+  });
+
+  it('grows the multiplier on each correct guess and cashes out the pot', () => {
+    let s = placeBet(at(20), 'higher', 10);
+    const step1 = s.bet!.step;
+    s = drawRound(s, pick(s.remaining, 50));
+    s = placeBet(s, 'lower', 999); // stake is ignored while riding
+    expect(s.balance).toBe(90);
+    expect(s.bet).toMatchObject({ ride: true, stake: 10 });
+    const step2 = s.bet!.step;
+    s = drawRound(s, pick(s.remaining, 30));
+    expect(s.streak!.wins).toBe(2);
+    expect(s.streak!.mult).toBe(Math.floor(step1 * step2 * 100 + 1e-9) / 100);
+    const pot = potOf(s.streak!);
+    s = cashOut(s);
+    expect(s.streak).toBeNull();
+    expect(s.balance).toBeCloseTo(90 + pot, 2);
+  });
+
+  it('loses the whole streak on a wrong guess', () => {
+    let s = placeBet(at(20), 'higher', 10);
+    s = drawRound(s, pick(s.remaining, 50));
+    s = placeBet(s, 'higher', 10);
+    s = drawRound(s, pick(s.remaining, 5));
+    expect(s.streak).toBeNull();
+    expect(s.balance).toBe(90);
+  });
+
+  it('banks a streak that sits out a round', () => {
+    let s = placeBet(at(20), 'higher', 10);
+    s = drawRound(s, pick(s.remaining, 50));
+    const pot = potOf(s.streak!);
+    s = drawRound(s, pick(s.remaining, 7));
+    expect(s.streak).toBeNull();
+    expect(s.last!.banked).toBe(pot);
+    expect(s.balance).toBeCloseTo(90 + pot, 2);
+  });
+
+  it('cancelling a riding pick keeps the streak', () => {
+    let s = placeBet(at(20), 'higher', 10);
+    s = drawRound(s, pick(s.remaining, 50));
+    s = cancelBet(placeBet(s, 'lower', 10));
+    expect(s.streak).not.toBeNull();
+    expect(s.balance).toBe(90);
   });
 
   it('keeps the stake on a loss', () => {
     const s = placeBet(at(40), 'higher', 25);
     const next = drawRound(s, pick(s.remaining, 3));
     expect(next.balance).toBe(75);
-    expect(next.last).toMatchObject({ won: false, payout: 0 });
+    expect(next.last).toMatchObject({ won: false, streak: null });
   });
 
   it('draws with no bet and leaves the balance alone', () => {

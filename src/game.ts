@@ -40,6 +40,10 @@ export function oddsFor(current: number, remaining: readonly number[], dir: Dire
   return { winning, total, chance, multiplier };
 }
 
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 export type Rng = () => number;
 
 export const defaultRng: Rng = () => {
@@ -54,7 +58,21 @@ export interface Bet {
   stake: number;
   /** Multiplier locked in when the bet was placed. */
   step: number;
+  /** True when this bet rides a winning streak instead of a fresh stake. */
+  ride: boolean;
 }
+
+/** Winnings riding from round to round until cashed out or lost. */
+export interface Streak {
+  /** The original stake. */
+  stake: number;
+  /** Total multiplier built up so far (product of each winning step). */
+  mult: number;
+  /** Correct guesses in a row. */
+  wins: number;
+}
+
+export const potOf = (s: Streak) => round2(s.stake * s.mult);
 
 export interface RoundResult {
   round: number;
@@ -64,8 +82,10 @@ export interface RoundResult {
   ball: number;
   bet: Bet | null;
   won: boolean;
-  /** Amount credited to the balance (0 on a loss or no bet). */
-  payout: number;
+  /** Streak after this round (null if the bet lost or there was none). */
+  streak: Streak | null;
+  /** Amount banked automatically because the streak sat out this round. */
+  banked: number;
 }
 
 export interface GameState {
@@ -76,8 +96,10 @@ export interface GameState {
   current: number;
   /** Balls still in the drum (excludes current). */
   remaining: number[];
-  /** This round's bet, already taken off the balance. */
+  /** This round's bet. A fresh stake is already taken off the balance. */
   bet: Bet | null;
+  /** Winnings riding on the next guess, if the last bet won. */
+  streak: Streak | null;
   last: RoundResult | null;
 }
 
@@ -93,47 +115,68 @@ const fullDrum = () => Array.from({ length: TOTAL_BALLS }, (_, i) => i + 1);
 /** Fresh drum with the first ball already showing. */
 export function newGame(balance: number, rng: Rng = defaultRng): GameState {
   const [current, remaining] = takeRandom(fullDrum(), rng);
-  return { balance, round: 1, current, remaining, bet: null, last: null };
+  return { balance, round: 1, current, remaining, bet: null, streak: null, last: null };
 }
 
-/** Returns any bet already placed this round to the balance. */
+/** Withdraws this round's pick. A fresh stake goes back to the balance; a streak stays. */
 export function cancelBet(state: GameState): GameState {
   if (!state.bet) return state;
-  return { ...state, balance: round2(state.balance + state.bet.stake), bet: null };
+  const refund = state.bet.ride ? 0 : state.bet.stake;
+  return { ...state, balance: round2(state.balance + refund), bet: null };
 }
 
 /**
- * Places (or replaces) this round's bet. The stake comes off the balance now;
- * the multiplier is locked at the odds for the ball showing.
+ * Places (or replaces) this round's bet. With no streak, the stake comes off
+ * the balance now. During a streak the whole pot rides and `stake` is ignored.
+ * Either way the step multiplier is locked at the odds for the ball showing.
  */
 export function placeBet(state: GameState, dir: Direction, stake: number): GameState {
   const base = cancelBet(state);
+  if (base.streak) {
+    const odds = oddsFor(base.current, base.remaining, dir);
+    if (odds.multiplier === null) throw new Error(`No ${dir} balls left`);
+    return { ...base, bet: { dir, stake: base.streak.stake, step: odds.multiplier, ride: true } };
+  }
   if (!Number.isFinite(stake) || stake <= 0) throw new Error('Stake must be positive');
   if (stake > base.balance) throw new Error('Stake is more than your balance');
   const odds = oddsFor(base.current, base.remaining, dir);
   if (odds.multiplier === null) throw new Error(`No ${dir} balls left`);
-  return { ...base, balance: round2(base.balance - stake), bet: { dir, stake, step: odds.multiplier } };
+  return { ...base, balance: round2(base.balance - stake), bet: { dir, stake, step: odds.multiplier, ride: false } };
+}
+
+/** Banks the streak's pot into the balance. Only while no pick is riding on it. */
+export function cashOut(state: GameState): GameState {
+  if (!state.streak) return state;
+  const base = cancelBet(state);
+  return { ...base, balance: round2(base.balance + potOf(state.streak)), streak: null };
 }
 
 /**
- * Closes betting and draws the next ball. A winning bet pays stake x locked
- * multiplier into the balance. The drum refills when it runs out.
+ * Closes betting and draws the next ball. A win starts or grows the streak
+ * (its multiplier is multiplied by the step); a loss ends it. A streak with no
+ * pick this round is banked automatically. The drum refills when it runs out.
  */
 export function drawRound(state: GameState, rng: Rng = defaultRng): GameState {
   const [ball, rest] = takeRandom(state.remaining, rng);
   const bet = state.bet;
   const won = bet !== null && (bet.dir === 'higher' ? ball > state.current : ball < state.current);
-  const payout = won ? round2(bet.stake * bet.step) : 0;
+  let streak: Streak | null = null;
+  let banked = 0;
+  if (bet && won) {
+    const prev = bet.ride ? state.streak : null;
+    streak = prev
+      ? { stake: prev.stake, mult: floor2(prev.mult * bet.step), wins: prev.wins + 1 }
+      : { stake: bet.stake, mult: bet.step, wins: 1 };
+  } else if (!bet && state.streak) {
+    banked = potOf(state.streak);
+  }
   return {
-    balance: round2(state.balance + payout),
+    balance: round2(state.balance + banked),
     round: state.round + 1,
     current: ball,
     remaining: rest.length > 0 ? rest : fullDrum().filter((b) => b !== ball),
     bet: null,
-    last: { round: state.round, from: state.current, ball, bet, won, payout },
+    streak,
+    last: { round: state.round, from: state.current, ball, bet, won, streak, banked },
   };
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
 }

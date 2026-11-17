@@ -122,6 +122,11 @@ export const sfx = {
     [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, i * 0.08, 0.3, { type: 'triangle', gain: 0.18 }));
     for (let i = 0; i < 8; i++) tone(2600 + Math.random() * 1600, 0.4 + i * 0.05, 0.09, { type: 'sine', gain: 0.08 });
   },
+  /** Cash out: a cascade of coins and a bright chord. */
+  cash() {
+    for (let i = 0; i < 14; i++) tone(1800 + Math.random() * 2200, i * 0.045, 0.12, { type: 'triangle', gain: 0.1 });
+    [523, 784, 1047].forEach((f) => tone(f, 0.05, 0.6, { type: 'sine', gain: 0.12 }));
+  },
   /** Loss: soft falling wah. */
   lose() {
     tone(392, 0, 0.25, { type: 'sawtooth', gain: 0.08, to: 330 });
