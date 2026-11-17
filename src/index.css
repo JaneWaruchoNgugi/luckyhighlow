@@ -1,29 +1,39 @@
+/* Bingo hall at night: deep plum room, marquee gold, B-I-N-G-O column colors as the only other hues. */
 :root {
-  --bg: #0b1a14;
-  --felt: #12352a;
-  --felt-2: #0f2b22;
-  --panel: rgba(255, 255, 255, 0.05);
-  --line: rgba(255, 255, 255, 0.1);
-  --text: #f3efe2;
-  --muted: #9fb3a8;
-  --gold: #f5c542;
-  --win: #5fe39a;
-  --lose: #ff6b6b;
-  --B: #3b82f6;
-  --I: #ef4444;
-  --N: #e5e7eb;
-  --G: #22c55e;
-  --O: #f59e0b;
+  --bg: #120d26;
+  --bg-glow: #2a1a5e;
+  --surface: #1c1540;
+  --surface-2: #261c55;
+  --line: rgba(255, 255, 255, 0.09);
+  --text: #f7f2ff;
+  --muted: #a99fcb;
+  --gold: #ffc94d;
+  --gold-deep: #e09a12;
+  --win: #4be3a4;
+  --win-deep: #16a56d;
+  --lose: #ff6b8b;
+  --lose-deep: #d63a5f;
+  --B: #4c8dff;
+  --I: #ff5a6e;
+  --N: #c9c3e6;
+  --G: #3fd28a;
+  --O: #ffab3d;
+  --font-display: 'Lilita One', 'Arial Rounded MT Bold', 'Trebuchet MS', system-ui, sans-serif;
+  --font-body: 'Rubik', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color-scheme: dark;
-  font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-family: var(--font-body);
 }
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; min-height: 100%; }
 body {
-  background: radial-gradient(ellipse at top, #16402f 0%, var(--bg) 70%);
   background-color: var(--bg);
+  background-image:
+    radial-gradient(900px 500px at 50% -10%, var(--bg-glow), transparent 70%),
+    radial-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: auto, 22px 22px;
   color: var(--text);
   min-height: 100vh;
 }
 button { font: inherit; cursor: pointer; }
-button:disabled { cursor: not-allowed; opacity: 0.4; }
+button:disabled { cursor: not-allowed; }
+:focus-visible { outline: 3px solid var(--gold); outline-offset: 3px; }

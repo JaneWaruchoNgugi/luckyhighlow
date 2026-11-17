@@ -13,6 +13,7 @@ import {
   type GameState,
 } from './game';
 import { Reel } from './Reel';
+import { RangeBar } from './RangeBar';
 import './App.css';
 
 const START_BALANCE = 1000;
@@ -140,11 +141,16 @@ export default function App() {
       <header className="top">
         <h1 className="logo">
           <span className="logo-lucky">Lucky</span>
-          <span className="logo-hl">highlow</span>
+          <span className="logo-hl">
+            high<span className="logo-arrow up">▲</span>low<span className="logo-arrow down">▼</span>
+          </span>
         </h1>
         <div className="balance" aria-live="polite">
-          <span className="label">Play money</span>
-          <span className="amount">{fmt(view.balance)}</span>
+          <span className="balance-coin" aria-hidden="true">L</span>
+          <span>
+            <span className="label">Play money</span>
+            <span className="amount">{fmt(view.balance)}</span>
+          </span>
         </div>
       </header>
 
@@ -162,17 +168,21 @@ export default function App() {
             <div>
               <span className="label">{view.phase === 'cashed' ? 'Won' : 'Cash out'}</span>
               <span className="value win">
-                {view.phase === 'cashed' ? fmt(view.payout) : playing ? fmt(potentialWin(game)) : '—'}
+                {view.phase === 'cashed' ? fmt(view.payout) : viewPlaying ? fmt(potentialWin(view)) : '—'}
               </span>
             </div>
           </div>
 
           <div className="ball-wrap">
-            <Reel target={game.current} spinKey={spinKey} onDone={onSpinDone} />
+            <div className={`marquee ${spinning ? 'on' : ''}`}>
+              <Reel target={game.current} spinKey={spinKey} onDone={onSpinDone} />
+            </div>
             <div className="drum-count">
-              {viewPlaying ? `${view.remaining.length} balls left` : view.phase === 'idle' ? `${TOTAL_BALLS} balls` : ''}
+              {viewPlaying ? `${view.remaining.length} balls left in the drum` : view.phase === 'idle' ? `${TOTAL_BALLS} balls in the drum` : ' '}
             </div>
           </div>
+
+          <RangeBar current={view.current} remaining={view.remaining} />
 
           <p className="status" role="status">
             {status}
@@ -191,8 +201,8 @@ export default function App() {
                 </span>
               </button>
               <button className="btn cash" onClick={onCashOut} disabled={spinning || !view.last}>
-                Cash out
-                <span className="g-odds">{fmt(potentialWin(game))}</span>
+                <span className="g-title">Cash out</span>
+                <span className="g-odds">{fmt(potentialWin(view))}</span>
               </button>
               <button
                 className="btn guess lower"
@@ -281,6 +291,7 @@ export default function App() {
               that can win, the bigger the multiplier. A wrong guess loses the stake. Cash out any time after your
               first correct guess.
             </p>
+            <p>The middle ball is 38: 37 balls sit below it and 37 above. The bar under the reel shows where the current ball sits and how many balls are left on each side.</p>
             <p>Multipliers pay 97% of fair odds. Play money only, no real value.</p>
           </details>
         </aside>
