@@ -26,5 +26,29 @@ npm run build        # production build in dist/
 npm run build:single # one self-contained HTML file in dist-single/
 ```
 
-The ball stage is drawn on a canvas in `src/GameCanvas.tsx`. Game rules live in `src/game.ts` (pure functions, unit tested in `src/game.test.ts`); the UI is `src/App.tsx`.
-The house edge is `RETURN_TO_PLAYER` in `src/game.ts`.
+## Project structure
+
+```
+src/
+  main.tsx              entry point
+  App.tsx               the game screen: live rounds, betting, streaks, cash out
+  components/
+    GameCanvas.tsx      ball stage drawn on a canvas (reel, lights, countdown ring)
+    RangeBar.tsx        Round Progress bar (1-75)
+    SettingsPanel.tsx   game settings sheet
+    Tour.tsx            How to play tour
+    Icons.tsx           inline SVG icons
+  game/
+    game.ts             game rules (pure functions)
+    game.test.ts        Vitest tests for the rules
+  lib/
+    format.ts           money and percent formatting
+    settings.ts         saved settings (sound, volume)
+    sound.ts            Web Audio sound effects
+    storage.ts          saved balance and tour flag
+  styles/
+    index.css           colour tokens and base styles
+    App.css             game styles
+```
+
+The house edge is `RETURN_TO_PLAYER` in `src/game/game.ts`.

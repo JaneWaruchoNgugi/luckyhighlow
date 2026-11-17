@@ -1,4 +1,4 @@
-import { TOTAL_BALLS } from './game';
+import { TOTAL_BALLS } from '../game/game';
 
 /** Middle of 1–75: 37 balls below it, 37 above. */
 const MIDDLE = Math.ceil(TOTAL_BALLS / 2);

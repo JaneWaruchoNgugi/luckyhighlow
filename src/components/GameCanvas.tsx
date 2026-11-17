@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { TOTAL_BALLS } from './game';
+import { TOTAL_BALLS } from '../game/game';
 
 export type LightShow = 'idle' | 'hurry' | 'draw' | 'win' | 'lose';
 
